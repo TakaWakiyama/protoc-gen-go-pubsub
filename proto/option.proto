@@ -1,0 +1,15 @@
+syntax = "proto3";
+package events;
+
+option go_package = "github.com/TakaWakiyama/forcusing-backend/cmd/protoc-gen-go-event/option";
+
+import "google/protobuf/descriptor.proto";
+
+message PubSubOption {
+	string topic = 1;
+	string subscription = 2;
+}
+
+extend google.protobuf.MethodOptions{
+	optional PubSubOption pubSubOption = 50006;
+}
