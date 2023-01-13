@@ -1,7 +1,7 @@
 syntax = "proto3";
-package events;
+package option;
 
-option go_package = "github.com/TakaWakiyama/forcusing-backend/cmd/protoc-gen-go-event/option";
+option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/option";
 
 import "google/protobuf/descriptor.proto";
 
