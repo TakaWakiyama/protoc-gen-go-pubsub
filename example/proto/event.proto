@@ -1,9 +1,20 @@
 syntax = "proto3";
 package events;
 
-option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/sample";
+option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
 
-import "github.com/TakaWakiyama/protoc-gen-go/proto/options.proto";
+/* TODO: PathImportができないので、どこかで修正する */
+import "google/protobuf/descriptor.proto";
+
+message PubSubOption {
+	string topic = 1;
+	string subscription = 2;
+}
+
+extend google.protobuf.MethodOptions{
+	optional PubSubOption pubSubOption = 50006;
+}
+
 
 message HelloWorldRequest {
     string eventID = 1;
