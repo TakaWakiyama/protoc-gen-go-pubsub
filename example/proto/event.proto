@@ -4,17 +4,7 @@ package events;
 option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
 
 /* TODO: PathImportができないので、どこかで修正する */
-import "google/protobuf/descriptor.proto";
-
-message PubSubOption {
-	string topic = 1;
-	string subscription = 2;
-}
-
-extend google.protobuf.MethodOptions{
-	optional PubSubOption pubSubOption = 50006;
-}
-
+import "option/option.proto";
 
 message HelloWorldRequest {
     string eventID = 1;
@@ -26,7 +16,7 @@ message HelloWorldResponse {}
 
 service  HelloWorldService {
     rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse) {
-        option (pubSubOption) = {
+        option (option.pubSubOption) = {
 			topic: "helloworldtopic"
 			subscription: "helloworldsubscription"
 		};

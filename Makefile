@@ -7,6 +7,7 @@ generate_sample:
 	mkdir -p ./example/proto/option
 	cp proto/option.proto ./example/proto/option/
 	protoc \
+	-I ./example/proto \
 	--go_out=./example/generated \
 	--go-pubsub_out=./example/generated \
 	./example/proto/event.proto
