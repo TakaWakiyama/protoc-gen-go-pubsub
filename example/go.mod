@@ -1,9 +1,10 @@
-module example
+module github.com/TakaWakiyama/protoc-gen-go-pubsub/example
 
 go 1.19
 
 require (
 	cloud.google.com/go/pubsub v1.28.0
+	github.com/google/uuid v1.3.0
 	google.golang.org/protobuf v1.28.1
 )
 

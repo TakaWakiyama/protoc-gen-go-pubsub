@@ -3,16 +3,15 @@ generate_option:
 	mv ./option/proto/option.pb.go ./option/option.pb.go
 	rm -rf ./option/proto
 
-generate_sample:
-	mkdir -p ./example/proto/option
+copy_option:
+	mkdir -p ./example/p
 	cp proto/option.proto ./example/proto/option/
+
+generate_sample:
 	protoc \
 	-I ./example/proto \
 	--go_out=./example/generated \
+	--go_opt=paths=source_relative \
 	--go-pubsub_out=./example/generated \
+	--go-pubsub_opt=paths=source_relative \
 	./example/proto/event.proto
-
-# make test
-# make install
-# make clean
-# make uninstall
