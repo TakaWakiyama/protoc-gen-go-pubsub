@@ -1,64 +1,15 @@
 // Code generated  by protoc-gen-go-event. DO NOT EDIT.
 // versions:
-// source: event.proto
+// source: pub.proto
 
 package example
 
 import (
-	"fmt"
 	"context"
 	"cloud.google.com/go/pubsub"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
-
-type HelloWorldService interface {
-	HelloWorld(ctx context.Context, req *HelloWorldRequest) error
-}
-
-func Run(service HelloWorldService, client *pubsub.Client) {
-	ctx := context.Background()
-	if err := listenHelloWorld(ctx, service, client); err != nil {
-		panic(err)
-	}
-}
-func listenHelloWorld(ctx context.Context, service HelloWorldService, client *pubsub.Client) error {
-	subscriptionName := "helloworldsubscription"
-	topicName := "helloworldtopic"
-	// TODO: メッセージの処理時間の延長を実装する必要がある
-	callback := func(ctx context.Context, msg *pubsub.Message) {
-		defer func() {
-			if r := recover(); r != nil {
-				msg.Nack()
-			}
-		}()
-		msg.Ack()
-
-		var event HelloWorldRequest
-		if err := proto.Unmarshal(msg.Data, &event); err != nil {
-			fmt.Println(err)
-		}
-		if err := service.HelloWorld(ctx, &event); err != nil {
-			msg.Nack()
-		}
-	}
-	err := pullMsgs(ctx, client, subscriptionName, topicName, callback)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func pullMsgs(ctx context.Context, client *pubsub.Client, subScriptionName, topicName string, callback func(context.Context, *pubsub.Message)) error {
-	sub := client.Subscription(subScriptionName)
-	// topic := client.Topic(topicName)
-	fmt.Printf("topicName: %v\n", topicName)
-	err := sub.Receive(ctx, callback)
-	if err != nil {
-		return err
-	}
-	return nil
-}
 
 type HelloWorldServiceClient interface {
 	PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error)

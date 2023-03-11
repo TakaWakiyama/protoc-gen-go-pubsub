@@ -1,14 +1,21 @@
 syntax = "proto3";
 package option;
-option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
+
+option go_package = "gengopubsub/option";
 
 import "google/protobuf/descriptor.proto";
 
-message PubSubOption {
+message SubOption {
 	string topic = 1;
 	string subscription = 2;
 }
 
+message PubOption {
+	string topic = 1;
+	// batch publish
+}
+
 extend google.protobuf.MethodOptions{
-	optional PubSubOption pubSubOption = 50006;
+	optional PubOption pubOption = 50006;
+	optional SubOption subOption = 50007;
 }

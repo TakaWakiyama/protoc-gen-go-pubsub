@@ -7,7 +7,7 @@ copy_option:
 	mkdir -p ./example/p
 	cp proto/option.proto ./example/proto/option/
 
-generate_sample:
+generate_sample_subscriber:
 	protoc \
 	-I ./example/proto \
 	--experimental_allow_proto3_optional \
@@ -15,4 +15,16 @@ generate_sample:
 	--go_opt=paths=source_relative \
 	--go-pubsub_out=./example/generated \
 	--go-pubsub_opt=paths=source_relative \
-	./example/proto/event.proto
+	--go-pubsub_opt=is_publisher=0 \
+	./example/proto/sub.proto
+
+generate_sample_publisher:
+	protoc \
+	-I ./example/proto \
+	--experimental_allow_proto3_optional \
+	--go_out=./example/generated \
+	--go_opt=paths=source_relative \
+	--go-pubsub_out=./example/generated \
+	--go-pubsub_opt=paths=source_relative \
+	--go-pubsub_opt=is_publisher=1 \
+	./example/proto/pub.proto
