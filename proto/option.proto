@@ -1,6 +1,8 @@
 syntax = "proto3";
 package option;
 
+option go_package = "gengopubsub/option";
+
 import "google/protobuf/descriptor.proto";
 
 message PubSubOption {
