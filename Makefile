@@ -10,6 +10,7 @@ copy_option:
 generate_sample:
 	protoc \
 	-I ./example/proto \
+	--experimental_allow_proto3_optional \
 	--go_out=./example/generated \
 	--go_opt=paths=source_relative \
 	--go-pubsub_out=./example/generated \

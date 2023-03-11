@@ -27,6 +27,11 @@ func listenHelloWorld(ctx context.Context, service HelloWorldService, client *pu
 	topicName := "helloworldtopic"
 	// TODO: メッセージの処理時間の延長を実装する必要がある
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if r := recover(); r != nil {
+				msg.Nack()
+			}
+		}()
 		msg.Ack()
 
 		var event HelloWorldRequest
@@ -69,10 +74,27 @@ func NewHelloWorldServiceClient(client *pubsub.Client) *innerHelloWorldServiceCl
 	}
 }
 
+var topicCache = map[string]*pubsub.Topic{}
+
+func (c *innerHelloWorldServiceClient) getTopic(topic string) (*pubsub.Topic, error) {
+	if t, ok := topicCache[topic]; ok {
+		return t, nil
+	}
+	t, err := GetOrCreateTopicIfNotExists(c.client, topic)
+	if err != nil {
+		return nil, err
+	}
+	topicCache[topic] = t
+	return t, nil
+}
+
 func (c *innerHelloWorldServiceClient) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
 	ctx := context.Background()
-	// TODO: メモリに持っておく
-	t := c.client.Topic(topic)
+
+	t, err := c.getTopic(topic)
+	if err != nil {
+		return "", err
+	}
 
 	ev, err := proto.Marshal(event)
 	if err != nil {

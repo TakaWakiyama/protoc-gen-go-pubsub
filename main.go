@@ -44,8 +44,6 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) *protogen.Generated
 	g := gen.NewGeneratedFile(filename, file.GoImportPath)
 	g.P("// Code generated  by protoc-gen-go-event. DO NOT EDIT.")
 	g.P("// versions:")
-	// g.P("//  protoc-gen-go ", file) // TODO: get version from protogen
-	// g.P("//  protoc        v3.21.9")                            // TODO: get version from protogen
 	g.P("// source: ", file.Proto.GetName())
 	g.P()
 	g.P("package ", file.GoPackageName)
@@ -163,10 +161,28 @@ func genClientCode(svcName string, methods []*protogen.Method, g *protogen.Gener
 		}
 	}
 
+	var topicCache = map[string]*pubsub.Topic{}
+
+	func (c *innerHelloWorldServiceClient) getTopic(topic string) (*pubsub.Topic, error) {
+		if t, ok := topicCache[topic]; ok {
+			return t, nil
+		}
+		t, err := GetOrCreateTopicIfNotExists(c.client, topic)
+		if err != nil {
+			return nil, err
+		}
+		topicCache[topic] = t
+		return t, nil
+	}
+
+
 	func (c *inner{{.Name}}Client) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
 		ctx := context.Background()
-		// TODO: メモリに持っておく
-		t := c.client.Topic(topic)
+
+		t, err := c.getTopic(topic)
+		if err != nil {
+			return "", err
+		}
 
 		ev, err := proto.Marshal(event)
 		if err != nil {
