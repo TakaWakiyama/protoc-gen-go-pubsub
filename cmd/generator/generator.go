@@ -17,7 +17,13 @@ const (
 	GO_IMPORT_PROTOREFLECT = "google.golang.org/protobuf/reflect/protoreflect"
 )
 
-var allImportMods = []string{
+var allImportSubMods = []string{
+	GO_IMPORT_CONTEXT,
+	GO_IMPORT_PUBSUB,
+	GO_IMPORT_PROTO,
+}
+
+var allImportPubMods = []string{
 	GO_IMPORT_CONTEXT,
 	GO_IMPORT_PUBSUB,
 	GO_IMPORT_PROTO,
@@ -64,7 +70,12 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	g.P("package ", pg.file.GoPackageName)
 	g.P()
 	g.P("import (")
-	for _, mod := range allImportMods {
+	mods := allImportSubMods
+	if pg.isPublisher {
+		mods = allImportPubMods
+	}
+
+	for _, mod := range mods {
 		g.P(`"`, mod, `"`)
 	}
 	g.P(")")
@@ -98,7 +109,7 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	g.P("}")
 	// Create listen function
 	for _, m := range svc.Methods {
-		opt, _ := getPubSubOption(m)
+		opt, _ := getSubOption(m)
 		g.P("func listen", m.GoName, "(ctx context.Context, service ", svcName, ", client *pubsub.Client) error {")
 		g.P("subscriptionName := ", `"`, opt.Subscription, `"`)
 		g.P("topicName := ", `"`, opt.Topic, `"`)
@@ -109,12 +120,14 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 		`)
 		g.P("var event ", m.Input.GoIdent)
 		g.P("if err := proto.Unmarshal(msg.Data, &event); err != nil {")
-		g.P("fmt.Println(err)")
+		g.P(`msg.Nack()
+		return`)
 		// error 処理
 		g.P("}")
 		g.P("if err := service.", m.GoName, "(ctx, &event); err != nil {")
 		// 再送信させる
-		g.P("msg.Nack()")
+		g.P(`msg.Nack()
+		return`)
 		g.P("}")
 		g.P("}")
 		g.P("err := pullMsgs(ctx, client, subscriptionName, topicName, callback)")
@@ -129,8 +142,6 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	g.P(`
 	func pullMsgs(ctx context.Context, client *pubsub.Client, subScriptionName, topicName string, callback func(context.Context, *pubsub.Message)) error {
 		sub := client.Subscription(subScriptionName)
-		// topic := client.Topic(topicName)
-		fmt.Printf("topicName: %v\n", topicName)
 		err := sub.Receive(ctx, callback)
 		if err != nil {
 			return err
@@ -158,10 +169,20 @@ func (pg *pubsubGenerator) generatePublisherFile() *protogen.GeneratedFile {
 	return g
 }
 
-func getPubSubOption(m *protogen.Method) (*option.PubSubOption, error) {
+func getSubOption(m *protogen.Method) (*option.SubOption, error) {
 	options := m.Desc.Options().(*descriptorpb.MethodOptions)
-	ext := proto.GetExtension(options, option.E_PubSubOption)
-	opt, ok := ext.(*option.PubSubOption)
+	ext := proto.GetExtension(options, option.E_SubOption)
+	opt, ok := ext.(*option.SubOption)
+	if !ok {
+		return nil, errors.New("no pubsub option")
+	}
+	return opt, nil
+}
+
+func getPubOption(m *protogen.Method) (*option.PubOption, error) {
+	options := m.Desc.Options().(*descriptorpb.MethodOptions)
+	ext := proto.GetExtension(options, option.E_PubOption)
+	opt, ok := ext.(*option.PubOption)
 	if !ok {
 		return nil, errors.New("no pubsub option")
 	}
@@ -230,7 +251,7 @@ func genClientCode(svcName string, methods []*protogen.Method, g *protogen.Gener
 	g.P(constructor)
 
 	for _, m := range methods {
-		opt, _ := getPubSubOption(m)
+		opt, _ := getPubOption(m)
 		g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error) {")
 		g.P("return c.publish(", `"`, opt.Topic, `"`, ", req)")
 		g.P("}")

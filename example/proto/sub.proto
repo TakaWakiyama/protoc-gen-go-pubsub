@@ -3,7 +3,7 @@ package events;
 option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
 
 /* TODO: PathImportができないので、どこかで修正する */
-import "option/option.proto";
+import "option.proto";
 import "pub.proto";
 
 service  HelloWorldSubscriber {

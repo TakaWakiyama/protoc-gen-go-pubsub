@@ -28,3 +28,11 @@ generate_sample_publisher:
 	--go-pubsub_opt=paths=source_relative \
 	--go-pubsub_opt=is_publisher=1 \
 	./example/proto/pub.proto
+
+generate_sample_option:
+	protoc \
+	-I ./example/proto \
+	--experimental_allow_proto3_optional \
+	--go_out=./example/generated \
+	--go_opt=paths=source_relative \
+	./example/proto/option.proto
