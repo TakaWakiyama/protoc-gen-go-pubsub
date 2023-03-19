@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"fmt"
 	"time"
+	retry "github.com/avast/retry-go"
 )
 
 type HelloWorldSubscriber interface {
@@ -22,21 +23,32 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client) {
 		panic(err)
 	}
 }
-func listenHelloWorld(ctx context.Context, service HelloWorldSubscriber, client *pubsub.Client) error {
-	subscriptionName := "helloworldsubscription"
-	topicName := "helloworldtopic"
+func createSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
 	t := client.Topic(topicName)
 	if exsits, err := t.Exists(ctx); !exsits {
-		return fmt.Errorf("topic does not exsit: %w", err)
+		return nil, fmt.Errorf("topic does not exsit: %w", err)
 	}
 	sub := client.Subscription(subscriptionName)
 	if exsits, _ := sub.Exists(ctx); !exsits {
 		client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-			Topic: t,
-			// TODO: デフォルトの時間はoptionで設定できるようにした方が良い
+			Topic:       t,
 			AckDeadline: 60 * time.Second,
 		})
 	}
+	return sub, nil
+}
+func listenHelloWorld(ctx context.Context, service HelloWorldSubscriber, client *pubsub.Client) error {
+	subscriptionName := "helloworldsubscription"
+	topicName := "helloworldtopic"
+	var sub *pubsub.Subscription
+	err := retry.Do(func() error {
+		tmp, err := createSubscriptionIFNotExists(ctx, client, topicName, subscriptionName)
+		if err != nil {
+			return err
+		}
+		sub = tmp
+		return nil
+	})
 	// TODO: メッセージの処理時間の延長を実装する必要がある
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		var event HelloWorldRequest
@@ -50,17 +62,7 @@ func listenHelloWorld(ctx context.Context, service HelloWorldSubscriber, client 
 		}
 		msg.Ack()
 	}
-	err := pullMsgs(ctx, client, subscriptionName, topicName, callback)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func pullMsgs(ctx context.Context, client *pubsub.Client, subScriptionName, topicName string, callback func(context.Context, *pubsub.Message)) error {
-	sub := client.Subscription(subScriptionName)
-	err := sub.Receive(ctx, callback)
-	if err != nil {
+	if err = sub.Receive(ctx, callback); err != nil {
 		return err
 	}
 	return nil

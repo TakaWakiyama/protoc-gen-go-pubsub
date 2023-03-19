@@ -17,6 +17,7 @@ const (
 	GO_IMPORT_PROTOREFLECT = "google.golang.org/protobuf/reflect/protoreflect"
 	GO_IMPORT_FMT          = "fmt"
 	GO_IMPORT_TIME         = "time"
+	GO_IMPORT_RETRY        = `retry "github.com/avast/retry-go"`
 )
 
 var allImportSubMods = []string{
@@ -25,6 +26,7 @@ var allImportSubMods = []string{
 	GO_IMPORT_PROTO,
 	GO_IMPORT_FMT,
 	GO_IMPORT_TIME,
+	GO_IMPORT_RETRY,
 }
 
 var allImportPubMods = []string{
@@ -80,6 +82,10 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	}
 
 	for _, mod := range mods {
+		if mod == GO_IMPORT_RETRY {
+			g.P(mod)
+			continue
+		}
 		g.P(`"`, mod, `"`)
 	}
 	g.P(")")
@@ -111,24 +117,36 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 		g.P("}")
 	}
 	g.P("}")
+
+	g.P(`func createSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
+		t := client.Topic(topicName)
+		if exsits, err := t.Exists(ctx); !exsits {
+			return nil, fmt.Errorf("topic does not exsit: %w", err)
+		}
+		sub := client.Subscription(subscriptionName)
+		if exsits, _ := sub.Exists(ctx); !exsits {
+			client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+				Topic: t,
+				AckDeadline: 60 * time.Second,
+			})
+		}
+		return sub, nil
+	}`)
 	// Create listen function
 	for _, m := range svc.Methods {
 		opt, _ := getSubOption(m)
 		g.P("func listen", m.GoName, "(ctx context.Context, service ", svcName, ", client *pubsub.Client) error {")
 		g.P("subscriptionName := ", `"`, opt.Subscription, `"`)
 		g.P("topicName := ", `"`, opt.Topic, `"`)
-		g.P(`t := client.Topic(topicName)
-		if exsits, err := t.Exists(ctx); !exsits {
-			return fmt.Errorf("topic does not exsit: %w", err)
-		}
-		sub := client.Subscription(subscriptionName)
-		if exsits, _ := sub.Exists(ctx); !exsits {
-			client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-				Topic:       t,
-				// TODO: デフォルトの時間はoptionで設定できるようにした方が良い
-				AckDeadline: 60 * time.Second,
-			})
-		}`)
+		g.P(`var sub *pubsub.Subscription
+		err := retry.Do(func() error {
+			tmp, err := createSubscriptionIFNotExists(ctx, client, topicName, subscriptionName)
+			if err != nil {
+				return err
+			}
+			sub = tmp
+			return nil
+		})`)
 		g.P("//", "TODO: メッセージの処理時間の延長を実装する必要がある")
 		// https://christina04.hatenablog.com/entry/cloud-pubsub
 		g.P("callback := func(ctx context.Context, msg *pubsub.Message) {")
@@ -143,27 +161,14 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 		g.P(`msg.Nack()
 		return
 		}
-		msg.Ack()`)
-		g.P("}")
-		g.P("err := pullMsgs(ctx, client, subscriptionName, topicName, callback)")
-		g.P("if err != nil {")
-		g.P("return err")
-		g.P("}")
-		g.P("return nil")
-		g.P("}")
-	}
-
-	// Create pullMsgs function
-	g.P(`
-	func pullMsgs(ctx context.Context, client *pubsub.Client, subScriptionName, topicName string, callback func(context.Context, *pubsub.Message)) error {
-		sub := client.Subscription(subScriptionName)
-		err := sub.Receive(ctx, callback)
-		if err != nil {
+		msg.Ack()
+		}
+		if err = sub.Receive(ctx, callback);err != nil {
 			return err
 		}
 		return nil
+		}`)
 	}
-	`)
 
 	return g
 }
