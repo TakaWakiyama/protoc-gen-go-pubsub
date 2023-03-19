@@ -37,7 +37,11 @@ func main() {
 	if fun == "" {
 		fmt.Println("Service Start")
 		s := service{}
-		event.Run(s, client)
+		interceptor := func(ctx context.Context, msg interface{}, info event.SubscriberInfo) error {
+			fmt.Printf("\"interceptor called\n msg\": %+v\n info: %+v\n", msg, info)
+			return nil
+		}
+		event.Run(s, client, interceptor)
 	} else {
 		c := event.NewHelloWorldServiceClient(client)
 		msg := uuid.New().String()

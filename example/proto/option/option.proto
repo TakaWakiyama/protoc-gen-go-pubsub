@@ -5,6 +5,8 @@ option go_package = "gengopubsub/option";
 
 import "google/protobuf/descriptor.proto";
 
+// Note proto3 では Interfaceをサポートしていないので linterなどでEventにIDがあるかチェックする必要がありそう
+
 message SubOption {
 	string topic = 1;
 	string subscription = 2;

@@ -2,6 +2,7 @@ package generator
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/TakaWakiyama/protoc-gen-go-pubsub/option"
@@ -109,61 +110,68 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	g.P("}")
 
 	// Create Run Function
-	g.P("func Run(service ", svcName, ", client *pubsub.Client) {")
-	g.P("ctx := context.Background()")
+	template := `func Run(service {_svcName}, client *pubsub.Client, interceptors ...SubscriberInterceptor) error {
+		if service == nil {
+			return fmt.Errorf("service is nil")
+		}
+		if client == nil {
+			return fmt.Errorf("service is nil")
+		}
+		ctx := context.Background()
+		is := newInner{_svcName}Subscriber(service, client, interceptors...)
+	`
+	g.P(strings.Replace(template, "{_svcName}", svcName, -1))
 	for _, m := range svc.Methods {
-		g.P("if err := listen", m.GoName, "(ctx, service, client); err != nil {")
-		g.P("panic(err)")
-		g.P("}")
+		template := `if err := is.listen{_methodName}(ctx); err != nil {
+			return err
+		}`
+		g.P(strings.Replace(template, "{_methodName}", m.GoName, -1))
 	}
+	g.P("return nil")
 	g.P("}")
 
-	g.P(`func createSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
-		t := client.Topic(topicName)
-		if exsits, err := t.Exists(ctx); !exsits {
-			return nil, fmt.Errorf("topic does not exsit: %w", err)
-		}
-		sub := client.Subscription(subscriptionName)
-		if exsits, _ := sub.Exists(ctx); !exsits {
-			client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-				Topic: t,
-				AckDeadline: 60 * time.Second,
-			})
-		}
-		return sub, nil
-	}`)
+	pg.genSubscriberInterceptor(svcName)
 	// Create listen function
 	for _, m := range svc.Methods {
 		opt, _ := getSubOption(m)
-		g.P("func listen", m.GoName, "(ctx context.Context, service ", svcName, ", client *pubsub.Client) error {")
+		g.P("func (is *inner", svcName, "Subscriber) listen", m.GoName, "(ctx context.Context) error {")
 		g.P("subscriptionName := ", `"`, opt.Subscription, `"`)
 		g.P("topicName := ", `"`, opt.Topic, `"`)
 		g.P(`var sub *pubsub.Subscription
-		err := retry.Do(func() error {
-			tmp, err := createSubscriptionIFNotExists(ctx, client, topicName, subscriptionName)
+		if err := retry.Do(func() error {
+			tmp, err := is.createSubscriptionIFNotExists(ctx, topicName, subscriptionName)
 			if err != nil {
 				return err
 			}
 			sub = tmp
 			return nil
-		})`)
+		}); err != nil {
+			return err
+		}`)
 		g.P("//", "TODO: メッセージの処理時間の延長を実装する必要がある")
+		g.P(fmt.Sprintf(`info := newInnerSubscriberInfo(topicName, subscriptionName, sub, "%s")`, m.GoName))
 		// https://christina04.hatenablog.com/entry/cloud-pubsub
 		g.P("callback := func(ctx context.Context, msg *pubsub.Message) {")
 		g.P("var event ", m.Input.GoIdent)
-		g.P("if err := proto.Unmarshal(msg.Data, &event); err != nil {")
-		g.P(`msg.Nack()
-		return`)
-		// error 処理
-		g.P("}")
-		g.P("if err := service.", m.GoName, "(ctx, &event); err != nil {")
-		// 再送信させる
+		g.P(`if err := proto.Unmarshal(msg.Data, &event); err != nil {
+		msg.Nack()
+		return
+		}`)
+
+		g.P(`
+		err := is.chainInterceptors(info, msg)
+		if err != nil {
+			msg.Nack()
+			return
+		}`)
+
+		g.P("if err := is.service.", m.GoName, "(ctx, &event); err != nil {")
 		g.P(`msg.Nack()
 		return
 		}
 		msg.Ack()
 		}
-		if err = sub.Receive(ctx, callback);err != nil {
+		if err := sub.Receive(ctx, callback);err != nil {
 			return err
 		}
 		return nil
@@ -278,35 +286,92 @@ func genClientCode(svcName string, methods []*protogen.Method, g *protogen.Gener
 	}
 }
 
-/*
-func genSubscriberClientCode() {
-	template = ```
-	func (s *inner${_svbName}Client) Subscribe(ctx context.Context, req *HelloWorldRequest) error {
-	subscriptionName := "helloworldsubscription"
-	topicName := "helloworldtopic"
-	// TODO: メッセージの処理時間の延長を実装する必要がある
-	callback := func(ctx context.Context, msg *pubsub.Message) {
-		var event HelloWorldRequest
-		if err := proto.Unmarshal(msg.Data, &event); err != nil {
-			msg.Nack()
-			return
-		}
-		if err := service.HelloWorld(ctx, &event); err != nil {
-			msg.Nack()
-			return
-		}
-		msg.Ack()
+func (pg *pubsubGenerator) genSubscriberInterceptor(svcName string) {
+	template := `type SubscriberInfo interface {
+		GetTopicName() string
+		GetSubscriptionName() string
+		GetSubscription() *pubsub.Subscription
+		GetMethod() string
 	}
 
-	sub := client.Subscription(subScriptionName)
-	err := sub.Receive(ctx, callback)
-	if err != nil {
-		return err
+	type innerSubscriberInfo struct {
+		topicName string
+		subscriptionName string
+		subscription *pubsub.Subscription
+		method string
 	}
-	return nil
-```
+
+	func newInnerSubscriberInfo(topicName string, subscriptionName string, subscription *pubsub.Subscription, method string) *innerSubscriberInfo {
+		return &innerSubscriberInfo{
+			topicName: topicName,
+			subscriptionName: subscriptionName,
+			subscription: subscription,
+			method: method,
+		}
+	}
+
+	func (i *innerSubscriberInfo) GetTopicName() string {
+		return i.topicName
+	}
+	func (i *innerSubscriberInfo) GetSubscriptionName() string {
+		return i.subscriptionName
+	}
+	func (i *innerSubscriberInfo) GetSubscription() *pubsub.Subscription {
+		return i.subscription
+	}
+	func (i *innerSubscriberInfo) GetMethod() string {
+		return i.method
+	}
+
+	type SubscriberInterceptor func(ctx context.Context, msg interface{}, info SubscriberInfo) error
+
+	type inner{_svcName}Subscriber struct {
+		service HelloWorldSubscriber
+		client *pubsub.Client
+		interceptors []SubscriberInterceptor
+	}
+
+	func newInner{_svcName}Subscriber(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...SubscriberInterceptor) *inner{_svcName}Subscriber {
+		return &inner{_svcName}Subscriber{
+			service: service,
+			client: client,
+			interceptors: interceptors,
+		}
+	}
+
+	func (is *inner{_svcName}Subscriber) createSubscriptionIFNotExists(ctx context.Context, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
+		t := is.client.Topic(topicName)
+		if exsits, err := t.Exists(ctx); !exsits {
+			return nil, fmt.Errorf("topic does not exsit: %w", err)
+		}
+		sub := is.client.Subscription(subscriptionName)
+		if exsits, _ := sub.Exists(ctx); !exsits {
+			is.client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+				Topic:       t,
+				AckDeadline: 60 * time.Second,
+			})
+		}
+		return sub, nil
+	}
+
+	func (is *inner{_svcName}Subscriber)chainInterceptors(info SubscriberInfo, msg interface{}) error {
+		errors := []error{}
+		hasError := false
+		for i := len(is.interceptors) - 1; i >= 0; i-- {
+			chain := is.interceptors[i]
+			err := chain(context.Background(), msg, info)
+			errors = append(errors, err)
+			if err != nil {
+				hasError = true
+			}
+		}
+		if hasError {
+			return fmt.Errorf("error occured in interceptors: %v", errors)
+		}
+		return nil
+	}`
+	pg.g.P(strings.ReplaceAll(template, "{_svcName}", svcName))
 }
-*/
 
 func genCreateTopicFunction(g *protogen.GeneratedFile) {
 	funcString := `

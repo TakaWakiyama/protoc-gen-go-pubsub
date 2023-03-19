@@ -17,52 +17,140 @@ type HelloWorldSubscriber interface {
 	HelloWorld(ctx context.Context, req *HelloWorldRequest) error
 }
 
-func Run(service HelloWorldSubscriber, client *pubsub.Client) {
+func Run(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...SubscriberInterceptor) error {
+	if service == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if client == nil {
+		return fmt.Errorf("service is nil")
+	}
 	ctx := context.Background()
-	if err := listenHelloWorld(ctx, service, client); err != nil {
-		panic(err)
+	is := newInnerHelloWorldSubscriberSubscriber(service, client, interceptors...)
+
+	if err := is.listenHelloWorld(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+type SubscriberInfo interface {
+	GetTopicName() string
+	GetSubscriptionName() string
+	GetSubscription() *pubsub.Subscription
+	GetMethod() string
+}
+
+type innerSubscriberInfo struct {
+	topicName        string
+	subscriptionName string
+	subscription     *pubsub.Subscription
+	method           string
+}
+
+func newInnerSubscriberInfo(topicName string, subscriptionName string, subscription *pubsub.Subscription, method string) *innerSubscriberInfo {
+	return &innerSubscriberInfo{
+		topicName:        topicName,
+		subscriptionName: subscriptionName,
+		subscription:     subscription,
+		method:           method,
 	}
 }
-func createSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
-	t := client.Topic(topicName)
+
+func (i *innerSubscriberInfo) GetTopicName() string {
+	return i.topicName
+}
+func (i *innerSubscriberInfo) GetSubscriptionName() string {
+	return i.subscriptionName
+}
+func (i *innerSubscriberInfo) GetSubscription() *pubsub.Subscription {
+	return i.subscription
+}
+func (i *innerSubscriberInfo) GetMethod() string {
+	return i.method
+}
+
+type SubscriberInterceptor func(ctx context.Context, msg interface{}, info SubscriberInfo) error
+
+type innerHelloWorldSubscriberSubscriber struct {
+	service      HelloWorldSubscriber
+	client       *pubsub.Client
+	interceptors []SubscriberInterceptor
+}
+
+func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...SubscriberInterceptor) *innerHelloWorldSubscriberSubscriber {
+	return &innerHelloWorldSubscriberSubscriber{
+		service:      service,
+		client:       client,
+		interceptors: interceptors,
+	}
+}
+
+func (is *innerHelloWorldSubscriberSubscriber) createSubscriptionIFNotExists(ctx context.Context, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
+	t := is.client.Topic(topicName)
 	if exsits, err := t.Exists(ctx); !exsits {
 		return nil, fmt.Errorf("topic does not exsit: %w", err)
 	}
-	sub := client.Subscription(subscriptionName)
+	sub := is.client.Subscription(subscriptionName)
 	if exsits, _ := sub.Exists(ctx); !exsits {
-		client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+		is.client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
 			Topic:       t,
 			AckDeadline: 60 * time.Second,
 		})
 	}
 	return sub, nil
 }
-func listenHelloWorld(ctx context.Context, service HelloWorldSubscriber, client *pubsub.Client) error {
+
+func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(info SubscriberInfo, msg interface{}) error {
+	errors := []error{}
+	hasError := false
+	for i := len(is.interceptors) - 1; i >= 0; i-- {
+		chain := is.interceptors[i]
+		err := chain(context.Background(), msg, info)
+		errors = append(errors, err)
+		if err != nil {
+			hasError = true
+		}
+	}
+	if hasError {
+		return fmt.Errorf("error occured in interceptors: %v", errors)
+	}
+	return nil
+}
+func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Context) error {
 	subscriptionName := "helloworldsubscription"
 	topicName := "helloworldtopic"
 	var sub *pubsub.Subscription
-	err := retry.Do(func() error {
-		tmp, err := createSubscriptionIFNotExists(ctx, client, topicName, subscriptionName)
+	if err := retry.Do(func() error {
+		tmp, err := is.createSubscriptionIFNotExists(ctx, topicName, subscriptionName)
 		if err != nil {
 			return err
 		}
 		sub = tmp
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 	// TODO: メッセージの処理時間の延長を実装する必要がある
+	info := newInnerSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld")
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		var event HelloWorldRequest
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
 			msg.Nack()
 			return
 		}
-		if err := service.HelloWorld(ctx, &event); err != nil {
+
+		err := is.chainInterceptors(info, msg)
+		if err != nil {
+			msg.Nack()
+			return
+		}
+		if err := is.service.HelloWorld(ctx, &event); err != nil {
 			msg.Nack()
 			return
 		}
 		msg.Ack()
 	}
-	if err = sub.Receive(ctx, callback); err != nil {
+	if err := sub.Receive(ctx, callback); err != nil {
 		return err
 	}
 	return nil
