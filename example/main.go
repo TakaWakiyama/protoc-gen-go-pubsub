@@ -19,11 +19,6 @@ func (s service) HelloWorld(ctx context.Context, req *event.HelloWorldRequest) e
 	return nil
 }
 
-func (s service) HogeEvent(ctx context.Context, req *event.HogeEventRequest) error {
-	fmt.Printf("H oge Event req : %+v\n", req)
-	return nil
-}
-
 func main() {
 	ctx := context.Background()
 	proj := "forcusing"
@@ -35,7 +30,7 @@ func main() {
 	t, _ := event.GetOrCreateTopicIfNotExists(client, "helloworldtopic")
 	client.CreateSubscription(ctx, "helloworldsubscription", pubsub.SubscriptionConfig{
 		Topic:       t,
-		AckDeadline: 30 * time.Second,
+		AckDeadline: 60 * time.Second,
 	})
 
 	fun := os.Getenv("PFUNC")

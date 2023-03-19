@@ -8,6 +8,8 @@ import (
 	"context"
 	"cloud.google.com/go/pubsub"
 	"google.golang.org/protobuf/proto"
+	"fmt"
+	"time"
 )
 
 type HelloWorldSubscriber interface {
@@ -23,10 +25,20 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client) {
 func listenHelloWorld(ctx context.Context, service HelloWorldSubscriber, client *pubsub.Client) error {
 	subscriptionName := "helloworldsubscription"
 	topicName := "helloworldtopic"
+	t := client.Topic(topicName)
+	if exsits, err := t.Exists(ctx); !exsits {
+		return fmt.Errorf("topic does not exsit: %w", err)
+	}
+	sub := client.Subscription(subscriptionName)
+	if exsits, _ := sub.Exists(ctx); !exsits {
+		client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+			Topic: t,
+			// TODO: デフォルトの時間はoptionで設定できるようにした方が良い
+			AckDeadline: 60 * time.Second,
+		})
+	}
 	// TODO: メッセージの処理時間の延長を実装する必要がある
 	callback := func(ctx context.Context, msg *pubsub.Message) {
-		msg.Ack()
-
 		var event HelloWorldRequest
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
 			msg.Nack()
@@ -36,6 +48,7 @@ func listenHelloWorld(ctx context.Context, service HelloWorldSubscriber, client 
 			msg.Nack()
 			return
 		}
+		msg.Ack()
 	}
 	err := pullMsgs(ctx, client, subscriptionName, topicName, callback)
 	if err != nil {

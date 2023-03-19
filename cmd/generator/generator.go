@@ -15,12 +15,16 @@ const (
 	GO_IMPORT_PUBSUB       = "cloud.google.com/go/pubsub"
 	GO_IMPORT_PROTO        = "google.golang.org/protobuf/proto"
 	GO_IMPORT_PROTOREFLECT = "google.golang.org/protobuf/reflect/protoreflect"
+	GO_IMPORT_FMT          = "fmt"
+	GO_IMPORT_TIME         = "time"
 )
 
 var allImportSubMods = []string{
 	GO_IMPORT_CONTEXT,
 	GO_IMPORT_PUBSUB,
 	GO_IMPORT_PROTO,
+	GO_IMPORT_FMT,
+	GO_IMPORT_TIME,
 }
 
 var allImportPubMods = []string{
@@ -113,11 +117,21 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 		g.P("func listen", m.GoName, "(ctx context.Context, service ", svcName, ", client *pubsub.Client) error {")
 		g.P("subscriptionName := ", `"`, opt.Subscription, `"`)
 		g.P("topicName := ", `"`, opt.Topic, `"`)
+		g.P(`t := client.Topic(topicName)
+		if exsits, err := t.Exists(ctx); !exsits {
+			return fmt.Errorf("topic does not exsit: %w", err)
+		}
+		sub := client.Subscription(subscriptionName)
+		if exsits, _ := sub.Exists(ctx); !exsits {
+			client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+				Topic:       t,
+				// TODO: デフォルトの時間はoptionで設定できるようにした方が良い
+				AckDeadline: 60 * time.Second,
+			})
+		}`)
 		g.P("//", "TODO: メッセージの処理時間の延長を実装する必要がある")
 		// https://christina04.hatenablog.com/entry/cloud-pubsub
-		g.P(`callback := func(ctx context.Context, msg *pubsub.Message) {
-			msg.Ack()
-		`)
+		g.P("callback := func(ctx context.Context, msg *pubsub.Message) {")
 		g.P("var event ", m.Input.GoIdent)
 		g.P("if err := proto.Unmarshal(msg.Data, &event); err != nil {")
 		g.P(`msg.Nack()
@@ -127,8 +141,9 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 		g.P("if err := service.", m.GoName, "(ctx, &event); err != nil {")
 		// 再送信させる
 		g.P(`msg.Nack()
-		return`)
-		g.P("}")
+		return
+		}
+		msg.Ack()`)
 		g.P("}")
 		g.P("err := pullMsgs(ctx, client, subscriptionName, topicName, callback)")
 		g.P("if err != nil {")
@@ -257,6 +272,36 @@ func genClientCode(svcName string, methods []*protogen.Method, g *protogen.Gener
 		g.P("}")
 	}
 }
+
+/*
+func genSubscriberClientCode() {
+	template = ```
+	func (s *inner${_svbName}Client) Subscribe(ctx context.Context, req *HelloWorldRequest) error {
+	subscriptionName := "helloworldsubscription"
+	topicName := "helloworldtopic"
+	// TODO: メッセージの処理時間の延長を実装する必要がある
+	callback := func(ctx context.Context, msg *pubsub.Message) {
+		var event HelloWorldRequest
+		if err := proto.Unmarshal(msg.Data, &event); err != nil {
+			msg.Nack()
+			return
+		}
+		if err := service.HelloWorld(ctx, &event); err != nil {
+			msg.Nack()
+			return
+		}
+		msg.Ack()
+	}
+
+	sub := client.Subscription(subScriptionName)
+	err := sub.Receive(ctx, callback)
+	if err != nil {
+		return err
+	}
+	return nil
+```
+}
+*/
 
 func genCreateTopicFunction(g *protogen.GeneratedFile) {
 	funcString := `
