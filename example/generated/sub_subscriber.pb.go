@@ -6,11 +6,12 @@ package example
 
 import (
 	"context"
-	"cloud.google.com/go/pubsub"
-	"google.golang.org/protobuf/proto"
 	"fmt"
 	"time"
+
+	"cloud.google.com/go/pubsub"
 	retry "github.com/avast/retry-go"
+	"google.golang.org/protobuf/proto"
 )
 
 type HelloWorldSubscriber interface {
@@ -22,7 +23,7 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...Su
 		return fmt.Errorf("service is nil")
 	}
 	if client == nil {
-		return fmt.Errorf("service is nil")
+		return fmt.Errorf("client is nil")
 	}
 	ctx := context.Background()
 	is := newInnerHelloWorldSubscriberSubscriber(service, client, interceptors...)
@@ -36,8 +37,9 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...Su
 type SubscriberInfo interface {
 	GetTopicName() string
 	GetSubscriptionName() string
-	GetSubscription() *pubsub.Subscription
+	GetSubscription() pubsub.Subscription
 	GetMethod() string
+	GetMessage() pubsub.Message
 }
 
 type innerSubscriberInfo struct {
@@ -45,14 +47,16 @@ type innerSubscriberInfo struct {
 	subscriptionName string
 	subscription     *pubsub.Subscription
 	method           string
+	message 			*pubsub.Message
 }
 
-func newInnerSubscriberInfo(topicName string, subscriptionName string, subscription *pubsub.Subscription, method string) *innerSubscriberInfo {
+func newInnerSubscriberInfo(topicName string, subscriptionName string, subscription *pubsub.Subscription, method string, message *pubsub.Message) *innerSubscriberInfo {
 	return &innerSubscriberInfo{
 		topicName:        topicName,
 		subscriptionName: subscriptionName,
 		subscription:     subscription,
 		method:           method,
+		message: 		message,
 	}
 }
 
@@ -62,14 +66,21 @@ func (i *innerSubscriberInfo) GetTopicName() string {
 func (i *innerSubscriberInfo) GetSubscriptionName() string {
 	return i.subscriptionName
 }
-func (i *innerSubscriberInfo) GetSubscription() *pubsub.Subscription {
-	return i.subscription
+func (i *innerSubscriberInfo) GetSubscription() pubsub.Subscription {
+	return *i.subscription
 }
 func (i *innerSubscriberInfo) GetMethod() string {
 	return i.method
 }
 
-type SubscriberInterceptor func(ctx context.Context, msg interface{}, info SubscriberInfo) error
+func (i *innerSubscriberInfo) GetMessage() pubsub.Message {
+	return *i.message
+}
+
+// https://github.com/grpc/grpc-go/blob/v1.53.0/interceptor.go#L87
+// type UnaryServerInterceptor func(ctx context.Context, req interface{}, info *UnaryServerInfo, handler UnaryHandler) (resp interface{}, err error)
+type SubscriberHandler func(ctx context.Context, req interface{}) error
+type SubscriberInterceptor func(ctx context.Context, msg interface{}, info SubscriberInfo, handler SubscriberHandler) error
 
 type innerHelloWorldSubscriberSubscriber struct {
 	service      HelloWorldSubscriber
@@ -100,22 +111,20 @@ func (is *innerHelloWorldSubscriberSubscriber) createSubscriptionIFNotExists(ctx
 	return sub, nil
 }
 
-func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(info SubscriberInfo, msg interface{}) error {
-	errors := []error{}
-	hasError := false
-	for i := len(is.interceptors) - 1; i >= 0; i-- {
-		chain := is.interceptors[i]
-		err := chain(context.Background(), msg, info)
-		errors = append(errors, err)
-		if err != nil {
-			hasError = true
-		}
+func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(ctx context.Context, event interface{}, info *innerSubscriberInfo, handler SubscriberHandler) SubscriberHandler {
+	if len(is.interceptors) == 0 {
+		return handler
 	}
-	if hasError {
-		return fmt.Errorf("error occured in interceptors: %v", errors)
+
+	f1 := func(ctx context.Context, req interface{}) error {
+		return is.interceptors[0](ctx, req, info, handler)
 	}
-	return nil
+	f2 := func(ctx context.Context, req interface{}) error {
+		return is.interceptors[1](ctx, req, info, f1)
+	}
+	return f2
 }
+
 func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Context) error {
 	subscriptionName := "helloworldsubscription"
 	topicName := "helloworldtopic"
@@ -131,23 +140,21 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		return err
 	}
 	// TODO: メッセージの処理時間の延長を実装する必要がある
-	info := newInnerSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld")
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		info := newInnerSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld", msg)
 		var event HelloWorldRequest
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
 			msg.Nack()
 			return
 		}
+		handler := is.chainInterceptors(ctx, &event, info, func(ctx context.Context, req interface{}) error {
+			return is.service.HelloWorld(ctx, req.(*HelloWorldRequest))
+		})
+		if err := handler(ctx, &event); err != nil {
+			msg.Nack()
+			return
+		}
 
-		err := is.chainInterceptors(info, msg)
-		if err != nil {
-			msg.Nack()
-			return
-		}
-		if err := is.service.HelloWorld(ctx, &event); err != nil {
-			msg.Nack()
-			return
-		}
 		msg.Ack()
 	}
 	if err := sub.Receive(ctx, callback); err != nil {
