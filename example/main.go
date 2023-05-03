@@ -53,18 +53,27 @@ func subscribe(ctx context.Context, proj string) {
 	s := service{}
 
 	interceptor := func(ctx context.Context, msg interface{}, info event.SubscriberInfo, handler event.SubscriberHandler) error {
-		fmt.Printf("interceptor1 \ninfo: %+v\n", info)
+		fmt.Printf("start interceptor1 \ninfo: %+v\n", info)
 		err := handler(ctx, msg)
+		fmt.Println("end interceptor1")
 		return err
 	}
 	interceptor2 := func(ctx context.Context, msg interface{}, _ event.SubscriberInfo, handler event.SubscriberHandler) error {
+		fmt.Println("start interceptor2")
 		start := time.Now()
 		err := handler(ctx, msg)
-		fmt.Printf("interceptor2: %v\n", time.Since(start))
+		fmt.Printf("end interceptor2: %v\n", time.Since(start))
 		return err
 	}
 
-	event.Run(s, client, interceptor, interceptor2)
+	interceptor3 := func(ctx context.Context, msg interface{}, e event.SubscriberInfo, handler event.SubscriberHandler) error {
+		fmt.Printf("start interceptor3 \n messageID %v \n", e.GetMessage().ID)
+		err := handler(ctx, msg)
+		fmt.Printf("end interceptor3 \n messageID %v \n", e.GetMessage().ID)
+		return err
+	}
+
+	event.Run(s, client, interceptor, interceptor2, interceptor3)
 }
 
 func publish(ctx context.Context, client *pubsub.Client) {
