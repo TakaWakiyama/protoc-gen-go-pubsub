@@ -107,18 +107,41 @@ func (is *innerHelloWorldSubscriberSubscriber) createSubscriptionIFNotExists(ctx
 	return sub, nil
 }
 
-func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(ctx context.Context, event interface{}, info *innerSubscriberInfo, handler SubscriberHandler) SubscriberHandler {
+func (is *innerHelloWorldSubscriberSubscriber) handle(
+	ctx context.Context,
+	event interface{},
+	info SubscriberInfo,
+	handler SubscriberHandler,
+) error {
 	if len(is.interceptors) == 0 {
-		return handler
+		return handler(ctx, event)
 	}
-	var out SubscriberHandler = handler
-	for i := 0; i < len(is.interceptors); i++ {
-		f := func(ctx context.Context, req interface{}) error {
-			return is.interceptors[i](ctx, req, info, out)
-		}
-		out = f
+	i := is.chainInterceptors(is.interceptors)
+	return i(ctx, event, info, handler)
+}
+
+func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(
+	interceptors []SubscriberInterceptor,
+) SubscriberInterceptor {
+	return func(ctx context.Context, event interface{}, info SubscriberInfo, handler SubscriberHandler) error {
+		return interceptors[0](ctx, event, info, is.getchainInterceptorHandler(interceptors, 0, ctx, event, info, handler))
 	}
-	return out
+}
+
+func (is *innerHelloWorldSubscriberSubscriber) getchainInterceptorHandler(
+	interceptors []SubscriberInterceptor,
+	curr int,
+	ctx context.Context,
+	event interface{},
+	info SubscriberInfo,
+	finalHandler SubscriberHandler,
+) SubscriberHandler {
+	if curr == len(interceptors)-1 {
+		return finalHandler
+	}
+	return func(ctx context.Context, event interface{}) error {
+		return interceptors[curr+1](ctx, event, info, is.getchainInterceptorHandler(interceptors, curr+1, ctx, event, info, finalHandler))
+	}
 }
 
 func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Context) error {
@@ -143,18 +166,18 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 			msg.Nack()
 			return
 		}
-		handler := is.chainInterceptors(ctx, &event, info, func(ctx context.Context, req interface{}) error {
+		if err := is.handle(ctx, &event, info, func(ctx context.Context, req interface{}) error {
 			return is.service.HelloWorld(ctx, req.(*HelloWorldRequest))
-		})
-		if err := handler(ctx, &event); err != nil {
+		}); err != nil {
 			msg.Nack()
 			return
 		}
-
 		msg.Ack()
 	}
+	fmt.Printf("\"before subscribe\": %v\n", "before subscribe")
 	if err := sub.Receive(ctx, callback); err != nil {
 		return err
 	}
+	fmt.Printf("\"after subscribe\": %v\n", "after subscribe")
 	return nil
 }

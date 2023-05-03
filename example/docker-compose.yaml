@@ -27,11 +27,12 @@ services:
       - PFUNC="p"
       - PUBSUB_EMULATOR_HOST=pubsub:8085
       - PROJECT_ID=emulator
-    links:
-      - redis
+    depends_on:
+      - pubsub
   subscriber:
     build: .
-    links:
+    depends_on:
+      - pubsub
       - redis
     environment:
       - PUBSUB_EMULATOR_HOST=pubsub:8085
