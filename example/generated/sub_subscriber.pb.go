@@ -3,6 +3,9 @@ package example
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/pubsub"
@@ -160,6 +163,8 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 	}
 	// TODO: メッセージの処理時間の延長を実装する必要がある
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		fmt.Printf("\"starthandleing\": %v\n", "starthandleing")
+		time.Sleep(6 * time.Second)
 		info := newInnerSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld", msg)
 		var event HelloWorldRequest
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
@@ -174,10 +179,51 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		}
 		msg.Ack()
 	}
-	fmt.Printf("\"before subscribe\": %v\n", "before subscribe")
-	if err := sub.Receive(ctx, callback); err != nil {
-		return err
-	}
-	fmt.Printf("\"after subscribe\": %v\n", "after subscribe")
+
+	subscribeGracefully(sub, ctx, callback)
+
 	return nil
 }
+
+func subscribeGracefully(sub *pubsub.Subscription, ctx context.Context, callback func(ctx context.Context, msg *pubsub.Message)) error {
+	stopped := false
+	idToDoing := map[string]interface{}{}
+	wrapper := func(ctx context.Context, msg *pubsub.Message) {
+		if stopped {
+			msg.Nack()
+			return
+		}
+		idToDoing[msg.ID] = nil
+		callback(ctx, msg)
+		delete(idToDoing, msg.ID)
+	}
+
+	eChan := make(chan error, 1)
+	go func() {
+		err := sub.Receive(ctx, wrapper)
+		if err != nil {
+			eChan <- err
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+	fmt.Printf("\"stopping gracefully...\": %v\n", "stopping gracefully...")
+	stopped = true
+	retry.Do(func() error {
+		if len(idToDoing) == 0 {
+			cancel()
+			return nil
+		}
+		return fmt.Errorf("not all messages are processed")
+	}, retry.Attempts(15), retry.Delay(3*time.Second))
+
+	return nil
+}
+
+// TODO: testコード書く
+// Interceptor
+// GracefulStop
+// 1. メッセージの処理時間の延長
