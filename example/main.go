@@ -53,7 +53,7 @@ func subscribe(ctx context.Context, proj string) {
 	s := service{}
 
 	interceptor := func(ctx context.Context, msg interface{}, info event.SubscriberInfo, handler event.SubscriberHandler) error {
-		fmt.Printf("interceptor1 \ninfo: %+v\n", info)
+		fmt.Printf("start interceptor1 \ninfo: %+v\n", info)
 		err := handler(ctx, msg)
 		fmt.Println("end interceptor1")
 		return err
@@ -62,7 +62,7 @@ func subscribe(ctx context.Context, proj string) {
 		fmt.Println("start interceptor2")
 		start := time.Now()
 		err := handler(ctx, msg)
-		fmt.Printf("interceptor2: %v\n", time.Since(start))
+		fmt.Printf("end interceptor2: %v\n", time.Since(start))
 		return err
 	}
 

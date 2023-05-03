@@ -116,8 +116,8 @@ func (is *innerHelloWorldSubscriberSubscriber) handle(
 	if len(is.interceptors) == 0 {
 		return handler(ctx, event)
 	}
-	i := is.chainInterceptors(is.interceptors)
-	return i(ctx, event, info, handler)
+	f := is.chainInterceptors(is.interceptors)
+	return f(ctx, event, info, handler)
 }
 
 func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(
