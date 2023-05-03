@@ -83,11 +83,11 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	}
 
 	for _, mod := range mods {
-		if mod == GO_IMPORT_RETRY {
+		if strings.Contains(mod, `"`) {
 			g.P(mod)
-			continue
+		} else {
+			g.P(`"`, mod, `"`)
 		}
-		g.P(`"`, mod, `"`)
 	}
 	g.P(")")
 }
@@ -115,7 +115,7 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 			return fmt.Errorf("service is nil")
 		}
 		if client == nil {
-			return fmt.Errorf("service is nil")
+			return fmt.Errorf("client is nil")
 		}
 		ctx := context.Background()
 		is := newInner{_svcName}Subscriber(service, client, interceptors...)
