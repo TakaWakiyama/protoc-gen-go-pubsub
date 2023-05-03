@@ -1,0 +1,20 @@
+run:
+  test: false
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - cyclop # 関数の循環複雑度をチェック (デフォルト値: 15)
+    - errorlint # errorのチェック
+    - exhaustive # switch文のdefaultをチェック
+    - forcetypeassert # type assertのチェック
+    - gocognit # 関数の複雑度をチェック (デフォルト値: 30)
+    - nestif # if文のネストの最大値を超えているかをチェック
+    - nolintlint # nolintコメントが書かれているかチェック
+
+linters-settings:
+  govet:
+    check-shadowing: true
+  nestif:
+    min-complexity: 4
+

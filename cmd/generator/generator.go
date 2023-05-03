@@ -84,7 +84,6 @@ func (pg *pubsubGenerator) decrearePackageName() {
 
 	for _, mod := range mods {
 		if strings.Contains(mod, `"`) {
-			// `retry "github.com/avast/retry-go"`
 			g.P(mod)
 		} else {
 			g.P(`"`, mod, `"`)

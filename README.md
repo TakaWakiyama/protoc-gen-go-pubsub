@@ -21,14 +21,13 @@ Options:
 
 ```bash
 generate_sample_publisher:
-	protoc \
-	-I ./example/proto \
-	--experimental_allow_proto3_optional \
-	--go_out=./example/generated \
-	--go_opt=paths=source_relative \
-	--go-pubsub_out=./example/generated \
-	--go-pubsub_opt=paths=source_relative \
-	--go-pubsub_opt=is_publisher=1 \
-	./example/proto/pub.proto
+ protoc \
+ -I ./example/proto \
+ --experimental_allow_proto3_optional \
+ --go_out=./example/generated \
+ --go_opt=paths=source_relative \
+ --go-pubsub_out=./example/generated \
+ --go-pubsub_opt=paths=source_relative \
+ --go-pubsub_opt=is_publisher=1 \
+ ./example/proto/pub.proto
 ```
-

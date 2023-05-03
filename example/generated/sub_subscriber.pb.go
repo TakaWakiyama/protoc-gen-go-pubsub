@@ -1,7 +1,3 @@
-// Code generated  by protoc-gen-go-event. DO NOT EDIT.
-// versions:
-// source: sub.proto
-
 package example
 
 import (
@@ -47,7 +43,7 @@ type innerSubscriberInfo struct {
 	subscriptionName string
 	subscription     *pubsub.Subscription
 	method           string
-	message 			*pubsub.Message
+	message          *pubsub.Message
 }
 
 func newInnerSubscriberInfo(topicName string, subscriptionName string, subscription *pubsub.Subscription, method string, message *pubsub.Message) *innerSubscriberInfo {
@@ -56,7 +52,7 @@ func newInnerSubscriberInfo(topicName string, subscriptionName string, subscript
 		subscriptionName: subscriptionName,
 		subscription:     subscription,
 		method:           method,
-		message: 		message,
+		message:          message,
 	}
 }
 
@@ -115,14 +111,14 @@ func (is *innerHelloWorldSubscriberSubscriber) chainInterceptors(ctx context.Con
 	if len(is.interceptors) == 0 {
 		return handler
 	}
-
-	f1 := func(ctx context.Context, req interface{}) error {
-		return is.interceptors[0](ctx, req, info, handler)
+	var out SubscriberHandler = handler
+	for i := 0; i < len(is.interceptors); i++ {
+		f := func(ctx context.Context, req interface{}) error {
+			return is.interceptors[i](ctx, req, info, out)
+		}
+		out = f
 	}
-	f2 := func(ctx context.Context, req interface{}) error {
-		return is.interceptors[1](ctx, req, info, f1)
-	}
-	return f2
+	return out
 }
 
 func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Context) error {
