@@ -11,6 +11,19 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// SubscriberOption is the option for HelloWorldSubscriber
+type SubscriberOption struct {
+	// Interceptors is the slice of SubscriberInterceptor. call before and after HelloWorldSubscriber method. default is empty.
+	Interceptors []gosub.SubscriberInterceptor
+	// SubscribeGracefully is the flag to stop subscribing gracefully. default is false.
+	SubscribeGracefully bool
+}
+
+var defaultSubscriberOption = &SubscriberOption{
+	Interceptors:        []gosub.SubscriberInterceptor{},
+	SubscribeGracefully: false,
+}
+
 type HelloWorldSubscriber interface {
 	HelloWorld(ctx context.Context, req *HelloWorldRequest) error
 }
@@ -26,7 +39,7 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 		option = defaultSubscriberOption
 	}
 	ctx := context.Background()
-	is := newInnerHelloWorldSubscriberSubscriber(service, client, option.Interceptors...)
+	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
 
 	if err := is.listenHelloWorld(ctx); err != nil {
 		return err
@@ -34,41 +47,21 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	return nil
 }
 
-type SubscriberOption struct {
-	Interceptors []gosub.SubscriberInterceptor
-}
-
-var defaultSubscriberOption = &SubscriberOption{
-	Interceptors: []gosub.SubscriberInterceptor{},
-}
-
 type innerHelloWorldSubscriberSubscriber struct {
-	service      HelloWorldSubscriber
-	client       *pubsub.Client
-	interceptors []gosub.SubscriberInterceptor
+	service HelloWorldSubscriber
+	client  *pubsub.Client
+	option  SubscriberOption
 }
 
-func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...gosub.SubscriberInterceptor) *innerHelloWorldSubscriberSubscriber {
+func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) *innerHelloWorldSubscriberSubscriber {
+	if option == nil {
+		option = defaultSubscriberOption
+	}
 	return &innerHelloWorldSubscriberSubscriber{
-		service:      service,
-		client:       client,
-		interceptors: interceptors,
+		service: service,
+		client:  client,
+		option:  *option,
 	}
-}
-
-func (is *innerHelloWorldSubscriberSubscriber) createSubscriptionIFNotExists(ctx context.Context, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
-	t := is.client.Topic(topicName)
-	if exsits, err := t.Exists(ctx); !exsits {
-		return nil, fmt.Errorf("topic does not exsit: %w", err)
-	}
-	sub := is.client.Subscription(subscriptionName)
-	if exsits, _ := sub.Exists(ctx); !exsits {
-		is.client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-			Topic:       t,
-			AckDeadline: 60 * time.Second,
-		})
-	}
-	return sub, nil
 }
 
 func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Context) error {
@@ -76,7 +69,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 	topicName := "helloworldtopic"
 	var sub *pubsub.Subscription
 	if err := retry.Do(func() error {
-		tmp, err := is.createSubscriptionIFNotExists(ctx, topicName, subscriptionName)
+		tmp, err := CreateHelloWorldSubscriptionIFNotExists(ctx, is.client)
 		if err != nil {
 			return err
 		}
@@ -92,7 +85,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 			msg.Nack()
 			return
 		}
-		if err := gosub.Handle(is.interceptors, ctx, &event, info, func(ctx context.Context, req interface{}) error {
+		if err := gosub.Handle(is.option.Interceptors, ctx, &event, info, func(ctx context.Context, req interface{}) error {
 			return is.service.HelloWorld(ctx, req.(*HelloWorldRequest))
 		}); err != nil {
 			msg.Nack()
@@ -100,7 +93,50 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		}
 		msg.Ack()
 	}
-	gosub.SubscribeGracefully(sub, ctx, callback, nil)
+	if is.option.SubscribeGracefully {
+		gosub.SubscribeGracefully(sub, ctx, callback, nil)
+	} else {
+		sub.Receive(ctx, callback)
+	}
 
 	return nil
+}
+
+func CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
+	topicName := "helloworldtopic"
+	t := client.Topic(topicName)
+
+	exsits, err := t.Exists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check topic exsits: %w", err)
+	}
+
+	if !exsits {
+		return client.CreateTopic(ctx, topicName)
+	}
+	return t, nil
+}
+
+func CreateHelloWorldSubscriptionIFNotExists(
+	ctx context.Context,
+	client *pubsub.Client,
+) (*pubsub.Subscription, error) {
+	subscriptionName := "helloworldsubscription"
+	topicName := "helloworldtopic"
+	t := client.Topic(topicName)
+	if exsits, err := t.Exists(ctx); !exsits {
+		return nil, fmt.Errorf("topic does not exsit: %w", err)
+	}
+	sub := client.Subscription(subscriptionName)
+	exsits, err := sub.Exists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check subscription exsits: %w", err)
+	}
+	if !exsits {
+		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+			Topic:       t,
+			AckDeadline: 60 * time.Second,
+		})
+	}
+	return sub, nil
 }

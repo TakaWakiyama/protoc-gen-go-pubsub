@@ -9,25 +9,29 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-type HelloWorldServiceClient interface {
-	PublishHelloWorld(ctx context.Context, event *HelloWorldRequest) (string, error)
-}
-
-type BatchUpdateResult struct {
+type BatchPublishResult struct {
 	ID    string
 	Error error
 }
 
+// ClientOption is the option for HelloWorldServiceClient
 type ClientOption struct {
-	Gracefully  bool
+	// Gracefully is the flag to stop publishing gracefully
+	Gracefully bool
+	// MaxAttempts is the max attempts when wait for publishing gracefully
 	MaxAttempts int
-	Delay       int
+	// Delay is the delay time when wait for publishing gracefully
+	Delay int
 }
 
 var defaultClientOption = &ClientOption{
 	Gracefully:  false,
 	MaxAttempts: 3,
 	Delay:       1,
+}
+
+type HelloWorldServiceClient interface {
+	PublishHelloWorld(ctx context.Context, event *HelloWorldRequest) (string, error)
 }
 
 type innerHelloWorldServiceClient struct {
@@ -95,7 +99,7 @@ func (c *innerHelloWorldServiceClient) publish(topic string, event protoreflect.
 	})
 }
 
-func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchUpdateResult, error) {
+func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
 	ctx := context.Background()
 
 	t, err := c.getTopic(topic)
@@ -121,9 +125,9 @@ func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []proto
 	if err != nil {
 		return nil, err
 	}
-	var results []BatchUpdateResult
+	var results []BatchPublishResult
 	for _, r := range res {
-		results = append(results, BatchUpdateResult{
+		results = append(results, BatchPublishResult{
 			ID:    r.ID,
 			Error: r.Error,
 		})
