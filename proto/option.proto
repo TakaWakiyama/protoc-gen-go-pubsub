@@ -21,6 +21,10 @@ message PubOption {
 	string topic = 1;
 	// batch publish messages default false
 	optional bool batchPublish = 2;
+	// TODO: add batch publish option
+	// ByteThreshold	1e6(=1MB)
+	// CountThreshold	100
+	// DelayThreshold	10 * time.Millisecond
 }
 
 extend google.protobuf.MethodOptions{

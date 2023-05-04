@@ -39,5 +39,7 @@ generate_sample_option:
 	--go_opt=paths=source_relative \
 	./example/proto/option.proto
 
+install:
+	cd cmd/generator && go install
 
-phony: generate_option copy_option generate_sample_subscriber generate_sample_publisher generate_sample_option
+phony: generate_option copy_option generate_sample_subscriber generate_sample_publisher generate_sample_option install

@@ -8,6 +8,7 @@ import (
 	"github.com/TakaWakiyama/protoc-gen-go-pubsub/option"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -19,15 +20,24 @@ const (
 	GO_IMPORT_FMT          = "fmt"
 	GO_IMPORT_TIME         = "time"
 	GO_IMPORT_RETRY        = `retry "github.com/avast/retry-go"`
+	GO_IMPORT_GOSUB        = `gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"`
+)
+
+const (
+	// FileDescriptorProto.package field number
+	fileDescriptorProtoPackageFieldNumber = 2
+	// FileDescriptorProto.syntax field number
+	fileDescriptorProtoSyntaxFieldNumber = 12
 )
 
 var allImportSubMods = []string{
 	GO_IMPORT_CONTEXT,
-	GO_IMPORT_PUBSUB,
-	GO_IMPORT_PROTO,
 	GO_IMPORT_FMT,
 	GO_IMPORT_TIME,
+	GO_IMPORT_PUBSUB,
+	GO_IMPORT_GOSUB,
 	GO_IMPORT_RETRY,
+	GO_IMPORT_PROTO,
 }
 
 var allImportPubMods = []string{
@@ -72,8 +82,11 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	g := pg.g
 	g.P("// Code generated  by protoc-gen-go-event. DO NOT EDIT.")
 	g.P("// versions:")
+	g.P("// - protoc-gen-go-pubsub v", version)
+	g.P("// - protoc             ", protocVersion(pg.gen))
 	g.P("// source: ", pg.file.Proto.GetName())
 	g.P()
+	genLeadingComments(g, pg.file.Desc.SourceLocations().ByPath(protoreflect.SourcePath{fileDescriptorProtoPackageFieldNumber}))
 	g.P("package ", pg.file.GoPackageName)
 	g.P()
 	g.P("import (")
@@ -92,93 +105,261 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	g.P(")")
 }
 
+func protocVersion(gen *protogen.Plugin) string {
+	v := gen.Request.GetCompilerVersion()
+	if v == nil {
+		return "(unknown)"
+	}
+	var suffix string
+	if s := v.GetSuffix(); s != "" {
+		suffix = "-" + s
+	}
+	return fmt.Sprintf("v%d.%d.%d%s", v.GetMajor(), v.GetMinor(), v.GetPatch(), suffix)
+}
+
+func genLeadingComments(g *protogen.GeneratedFile, loc protoreflect.SourceLocation) {
+	for _, s := range loc.LeadingDetachedComments {
+		g.P(protogen.Comments(s))
+		g.P()
+	}
+	if s := loc.LeadingComments; s != "" {
+		g.P(protogen.Comments(s))
+		g.P()
+	}
+}
+
 func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
+	if len(pg.file.Services) == 0 {
+		return pg.g
+	}
+
 	g := pg.g
 	pg.decrearePackageName()
-	if len(pg.file.Services) == 0 {
-		return g
-	}
+	genLeadingComments(g, pg.file.Desc.SourceLocations().ByPath(protoreflect.SourcePath{fileDescriptorProtoSyntaxFieldNumber}))
+	pg.generateSubscriberOption()
+	pg.generateSubscriberInterface()
+	// Note: 複数サービスのユースケースを確認する
 	svc := pg.file.Services[0]
+	pg.generateEntryPoint(svc)
+	pg.generateInnerSubscriber(svc)
+	pg.generateEachSubscribeFunction()
+	ms := pg.file.Services[0].Methods
+	pg.generatePubSubAccessorInterface(ms)
+	pg.generatePubSubAccessorImpl(ms)
 
-	svcName := svc.GoName
-	// Create interface
-	g.P("type ", svcName, " interface {")
+	return g
+}
+
+func (pg *pubsubGenerator) generateSubscriberInterface() {
+	svc := pg.file.Services[0]
+	pg.g.P("type ", svc.GoName, " interface {")
 	for _, m := range svc.Methods {
-		// g.P("// ", m.Comments.Leading, " ", m.Comments.Trailing)
-		g.P(m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") error ")
+		pg.g.P(m.Comments.Leading,
+			m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") error ")
 	}
-	g.P("}")
+	pg.g.P("}")
+}
 
-	// Create Run Function
-	template := `func Run(service {_svcName}, client *pubsub.Client, interceptors ...SubscriberInterceptor) error {
+func (pg *pubsubGenerator) generateSubscriberOption() {
+	pg.g.P(`// SubscriberOption is the option for HelloWorldSubscriber
+	type SubscriberOption struct {
+		// Interceptors is the slice of SubscriberInterceptor. call before and after HelloWorldSubscriber method. default is empty.
+		Interceptors []gosub.SubscriberInterceptor
+		// SubscribeGracefully is the flag to stop subscribing gracefully. default is false.
+		SubscribeGracefully bool
+	}
+
+	var defaultSubscriberOption = &SubscriberOption{
+		Interceptors:        []gosub.SubscriberInterceptor{},
+		SubscribeGracefully: false,
+	}`)
+}
+
+func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
+	template := `func Run(service {_svcName}, client *pubsub.Client, option *SubscriberOption) error {
 		if service == nil {
 			return fmt.Errorf("service is nil")
 		}
 		if client == nil {
 			return fmt.Errorf("client is nil")
 		}
+		if option == nil {
+			option = defaultSubscriberOption
+		}
 		ctx := context.Background()
-		is := newInner{_svcName}Subscriber(service, client, interceptors...)
+		is := newInner{_svcName}Subscriber(service, client, option)
+		%s
+		return nil
+	}
 	`
-	g.P(strings.Replace(template, "{_svcName}", svcName, -1))
+	template = strings.Replace(template, "{_svcName}", svc.GoName, -1)
+	fs := make([]string, 0, len(svc.Methods))
 	for _, m := range svc.Methods {
-		template := `if err := is.listen{_methodName}(ctx); err != nil {
+		l := `if err := is.listen{_methodName}(ctx); err != nil {
 			return err
 		}`
-		g.P(strings.Replace(template, "{_methodName}", m.GoName, -1))
+		l = strings.Replace(l, "{_methodName}", m.GoName, -1)
+		fs = append(fs, l)
 	}
-	g.P("return nil")
-	g.P("}")
+	out := fmt.Sprintf(template, strings.Join(fs, "\n"))
+	pg.g.P(out)
+}
 
-	pg.genSubscriberInterceptor(svcName)
-	// Create listen function
-	for _, m := range svc.Methods {
-		opt, _ := getSubOption(m)
-		g.P("func (is *inner", svcName, "Subscriber) listen", m.GoName, "(ctx context.Context) error {")
-		g.P("subscriptionName := ", `"`, opt.Subscription, `"`)
-		g.P("topicName := ", `"`, opt.Topic, `"`)
-		g.P(`var sub *pubsub.Subscription
-		if err := retry.Do(func() error {
-			tmp, err := is.createSubscriptionIFNotExists(ctx, topicName, subscriptionName)
-			if err != nil {
-				return err
-			}
-			sub = tmp
-			return nil
-		}); err != nil {
-			return err
-		}`)
-		g.P("//", "TODO: メッセージの処理時間の延長を実装する必要がある")
-		g.P(fmt.Sprintf(`info := newInnerSubscriberInfo(topicName, subscriptionName, sub, "%s")`, m.GoName))
-		// https://christina04.hatenablog.com/entry/cloud-pubsub
-		g.P("callback := func(ctx context.Context, msg *pubsub.Message) {")
-		g.P("var event ", m.Input.GoIdent)
-		g.P(`if err := proto.Unmarshal(msg.Data, &event); err != nil {
-		msg.Nack()
-		return
-		}`)
+func (pg *pubsubGenerator) generateInnerSubscriber(svc *protogen.Service) {
+	template := `
+	type inner{_svc.Name}Subscriber struct {
+		service HelloWorldSubscriber
+		client  *pubsub.Client
+		option  SubscriberOption
+		accessor PubSubAccessor
+	}
 
-		g.P(`
-		err := is.chainInterceptors(info, msg)
+	func newInner{_svc.Name}Subscriber(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) *innerHelloWorldSubscriberSubscriber {
+		if option == nil {
+			option = defaultSubscriberOption
+		}
+		return &inner{_svc.Name}Subscriber{
+			service: service,
+			client:  client,
+			option:  *option,
+			accessor: NewPubSubAccessor(),
+		}
+	}
+	`
+	template = strings.Replace(template, "{_svc.Name}", svc.GoName, -1)
+	pg.g.P(template)
+}
+
+func (pg *pubsubGenerator) generateEachSubscribeFunction() {
+
+	template := `func (is *inner{_svcName}Subscriber) listen{_m.GoName}(ctx context.Context) error {
+	subscriptionName := "{_opt.Subscription}"
+	topicName := "{_opt.Topic}"
+	var sub *pubsub.Subscription
+	if err := retry.Do(func() error {
+		tmp, err := is.accessor.Create{_m.GoName}SubscriptionIFNotExists(ctx, is.client)
 		if err != nil {
+			return err
+		}
+		sub = tmp
+		return nil
+	}); err != nil {
+		return err
+	}
+	callback := func(ctx context.Context, msg *pubsub.Message) {
+		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "{_m.GoName}", msg)
+		var event {_m.Input}
+		if err := proto.Unmarshal(msg.Data, &event); err != nil {
 			msg.Nack()
 			return
-		}`)
-
-		g.P("if err := is.service.", m.GoName, "(ctx, &event); err != nil {")
-		g.P(`msg.Nack()
-		return
+		}
+		if err := gosub.Handle(is.option.Interceptors, ctx, &event, info, func(ctx context.Context, req interface{}) error {
+			return is.service.{_m.GoName}(ctx, req.(*{_m.Input}))
+		}); err != nil {
+			msg.Nack()
+			return
 		}
 		msg.Ack()
-		}
-		if err := sub.Receive(ctx, callback);err != nil {
-			return err
-		}
-		return nil
-		}`)
 	}
 
-	return g
+	if is.option.SubscribeGracefully {
+		gosub.SubscribeGracefully(sub, ctx, callback, nil)
+	} else {
+		sub.Receive(ctx, callback)
+	}
+
+	return nil
+}
+	`
+
+	for _, m := range pg.file.Services[0].Methods {
+		opt, _ := getSubOption(m)
+		template := strings.Replace(template, "{_svcName}", pg.file.Services[0].GoName, -1)
+		template = strings.Replace(template, "{_m.GoName}", m.GoName, -1)
+		template = strings.Replace(template, "{_m.Input}", m.Input.GoIdent.GoName, -1)
+		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
+		template = strings.Replace(template, "{_opt.Subscription}", opt.Subscription, -1)
+		pg.g.P(template)
+	}
+}
+
+func (pg *pubsubGenerator) generatePubSubAccessorInterface(ms []*protogen.Method) {
+	template := `
+	// PubSubAccessor: accessor for HelloWorldPubSub
+	type PubSubAccessor interface {
+	%s
+	}
+	`
+	fs := make([]string, 0, len(ms))
+	for _, m := range ms {
+		f := `
+		Create{_m.GoName}TopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error)
+		Create{_m.GoName}SubscriptionIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error)`
+		f = strings.Replace(f, "{_m.GoName}", m.GoName, -1)
+		fs = append(fs, f)
+	}
+
+	out := fmt.Sprintf(template, strings.Join(fs, "\n"))
+	pg.g.P(out)
+}
+
+func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
+	fixed := `
+	type pubSubAccessorImpl struct{}
+
+	func NewPubSubAccessor() PubSubAccessor {
+		return &pubSubAccessorImpl{}
+	}`
+	pg.g.P(fixed)
+
+	for _, m := range ms {
+		opt, _ := getSubOption(m)
+		template := `
+		func (c *pubSubAccessorImpl) CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
+			topicName := "{_opt.Topic}"
+			t := client.Topic(topicName)
+			exsits, err := t.Exists(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check topic exsits: %w", err)
+			}
+			if !exsits {
+				return client.CreateTopic(ctx, topicName)
+			}
+			return t, nil
+		}
+
+		func (c *pubSubAccessorImpl) CreateHelloWorldSubscriptionIFNotExists(
+			ctx context.Context,
+			client *pubsub.Client,
+		) (*pubsub.Subscription, error) {
+			subscriptionName := "{_opt.Subscription}"
+			topicName := "{_opt.Topic}"
+			t := client.Topic(topicName)
+			if exsits, err := t.Exists(ctx); !exsits {
+				return nil, fmt.Errorf("topic does not exsit: %w", err)
+			}
+			sub := client.Subscription(subscriptionName)
+			exsits, err := sub.Exists(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check subscription exsits: %w", err)
+			}
+			if !exsits {
+				return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+					Topic:       t,
+					AckDeadline: {_opt.AckDeadlineSeconds} * time.Second,
+				})
+			}
+			return sub, nil
+		}`
+		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
+		template = strings.Replace(template, "{_opt.Subscription}", opt.Subscription, -1)
+		var ackDeadlineSeconds uint32 = 60
+		if opt.AckDeadlineSeconds != nil {
+			ackDeadlineSeconds = *opt.AckDeadlineSeconds
+		}
+		template = strings.Replace(template, "{_opt.AckDeadlineSeconds}", fmt.Sprintf("%d", ackDeadlineSeconds), -1)
+		pg.g.P(template)
+	}
 }
 
 func (pg *pubsubGenerator) generatePublisherFile() *protogen.GeneratedFile {
@@ -284,93 +465,6 @@ func genClientCode(svcName string, methods []*protogen.Method, g *protogen.Gener
 		g.P("return c.publish(", `"`, opt.Topic, `"`, ", req)")
 		g.P("}")
 	}
-}
-
-func (pg *pubsubGenerator) genSubscriberInterceptor(svcName string) {
-	template := `type SubscriberInfo interface {
-		GetTopicName() string
-		GetSubscriptionName() string
-		GetSubscription() *pubsub.Subscription
-		GetMethod() string
-	}
-
-	type innerSubscriberInfo struct {
-		topicName string
-		subscriptionName string
-		subscription *pubsub.Subscription
-		method string
-	}
-
-	func newInnerSubscriberInfo(topicName string, subscriptionName string, subscription *pubsub.Subscription, method string) *innerSubscriberInfo {
-		return &innerSubscriberInfo{
-			topicName: topicName,
-			subscriptionName: subscriptionName,
-			subscription: subscription,
-			method: method,
-		}
-	}
-
-	func (i *innerSubscriberInfo) GetTopicName() string {
-		return i.topicName
-	}
-	func (i *innerSubscriberInfo) GetSubscriptionName() string {
-		return i.subscriptionName
-	}
-	func (i *innerSubscriberInfo) GetSubscription() *pubsub.Subscription {
-		return i.subscription
-	}
-	func (i *innerSubscriberInfo) GetMethod() string {
-		return i.method
-	}
-
-	type SubscriberInterceptor func(ctx context.Context, msg interface{}, info SubscriberInfo) error
-
-	type inner{_svcName}Subscriber struct {
-		service HelloWorldSubscriber
-		client *pubsub.Client
-		interceptors []SubscriberInterceptor
-	}
-
-	func newInner{_svcName}Subscriber(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...SubscriberInterceptor) *inner{_svcName}Subscriber {
-		return &inner{_svcName}Subscriber{
-			service: service,
-			client: client,
-			interceptors: interceptors,
-		}
-	}
-
-	func (is *inner{_svcName}Subscriber) createSubscriptionIFNotExists(ctx context.Context, topicName string, subscriptionName string) (*pubsub.Subscription, error) {
-		t := is.client.Topic(topicName)
-		if exsits, err := t.Exists(ctx); !exsits {
-			return nil, fmt.Errorf("topic does not exsit: %w", err)
-		}
-		sub := is.client.Subscription(subscriptionName)
-		if exsits, _ := sub.Exists(ctx); !exsits {
-			is.client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-				Topic:       t,
-				AckDeadline: 60 * time.Second,
-			})
-		}
-		return sub, nil
-	}
-
-	func (is *inner{_svcName}Subscriber)chainInterceptors(info SubscriberInfo, msg interface{}) error {
-		errors := []error{}
-		hasError := false
-		for i := len(is.interceptors) - 1; i >= 0; i-- {
-			chain := is.interceptors[i]
-			err := chain(context.Background(), msg, info)
-			errors = append(errors, err)
-			if err != nil {
-				hasError = true
-			}
-		}
-		if hasError {
-			return fmt.Errorf("error occured in interceptors: %v", errors)
-		}
-		return nil
-	}`
-	pg.g.P(strings.ReplaceAll(template, "{_svcName}", svcName))
 }
 
 func genCreateTopicFunction(g *protogen.GeneratedFile) {

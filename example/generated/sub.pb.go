@@ -59,7 +59,6 @@ func file_sub_proto_init() {
 	if File_sub_proto != nil {
 		return
 	}
-	file_option_proto_init()
 	file_pub_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
