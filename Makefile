@@ -36,3 +36,6 @@ generate_sample_option:
 	--go_out=./example/generated \
 	--go_opt=paths=source_relative \
 	./example/proto/option.proto
+
+
+phony: generate_option copy_option generate_sample_subscriber generate_sample_publisher generate_sample_option

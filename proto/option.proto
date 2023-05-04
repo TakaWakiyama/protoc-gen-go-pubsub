@@ -5,14 +5,22 @@ option go_package = "gengopubsub/option";
 
 import "google/protobuf/descriptor.proto";
 
+// Subscriber option
 message SubOption {
+	// topic name
 	string topic = 1;
+	// subscription name
 	string subscription = 2;
+	// ack deadline seconds
+	optional uint32 ackDeadlineSeconds = 3;
 }
 
+// Publisher option
 message PubOption {
+	// topic name
 	string topic = 1;
-	// batch publish
+	// batch publish messages default false
+	optional bool batchPublish = 2;
 }
 
 extend google.protobuf.MethodOptions{
