@@ -1,6 +1,8 @@
 generate_option:
+	mkdir -p ./option
 	protoc --go_out=./option --go_opt=paths=source_relative  ./proto/option.proto
-	mv ./option/proto/option.pb.go ./option/option.pb.go
+	mkdir -p ./cmd/generator/option
+	mv ./option/proto/option.pb.go ./cmd/generator/option/option.pb.go
 	rm -rf ./option/proto
 
 copy_option:

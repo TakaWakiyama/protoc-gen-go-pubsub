@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 
-	"github.com/TakaWakiyama/protoc-gen-go-pubsub/cmd/generator"
 	"google.golang.org/protobuf/compiler/protogen"
 )
 
@@ -19,7 +18,7 @@ func main() {
 			if !f.Generate {
 				continue
 			}
-			g := generator.NewFileGenerator(gen, f, *isPublisher)
+			g := NewFileGenerator(gen, f, *isPublisher)
 			g.Generate()
 		}
 		return nil
