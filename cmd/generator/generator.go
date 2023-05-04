@@ -8,6 +8,7 @@ import (
 	"github.com/TakaWakiyama/protoc-gen-go-pubsub/option"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -19,15 +20,20 @@ const (
 	GO_IMPORT_FMT          = "fmt"
 	GO_IMPORT_TIME         = "time"
 	GO_IMPORT_RETRY        = `retry "github.com/avast/retry-go"`
+	GO_IMPORT_GOSUB        = `gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"`
 )
+
+// FileDescriptorProto.syntax field number
+const fileDescriptorProtoSyntaxFieldNumber = 12
 
 var allImportSubMods = []string{
 	GO_IMPORT_CONTEXT,
-	GO_IMPORT_PUBSUB,
-	GO_IMPORT_PROTO,
 	GO_IMPORT_FMT,
 	GO_IMPORT_TIME,
+	GO_IMPORT_PUBSUB,
+	GO_IMPORT_GOSUB,
 	GO_IMPORT_RETRY,
+	GO_IMPORT_PROTO,
 }
 
 var allImportPubMods = []string{
@@ -72,6 +78,8 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	g := pg.g
 	g.P("// Code generated  by protoc-gen-go-event. DO NOT EDIT.")
 	g.P("// versions:")
+	g.P("// - protoc-gen-go-pubsub v", version)
+	g.P("// - protoc             ", protocVersion(pg.gen))
 	g.P("// source: ", pg.file.Proto.GetName())
 	g.P()
 	g.P("package ", pg.file.GoPackageName)
@@ -92,12 +100,39 @@ func (pg *pubsubGenerator) decrearePackageName() {
 	g.P(")")
 }
 
+func protocVersion(gen *protogen.Plugin) string {
+	v := gen.Request.GetCompilerVersion()
+	if v == nil {
+		return "(unknown)"
+	}
+	var suffix string
+	if s := v.GetSuffix(); s != "" {
+		suffix = "-" + s
+	}
+	return fmt.Sprintf("v%d.%d.%d%s", v.GetMajor(), v.GetMinor(), v.GetPatch(), suffix)
+}
+
+func genLeadingComments(g *protogen.GeneratedFile, loc protoreflect.SourceLocation) {
+	for _, s := range loc.LeadingDetachedComments {
+		g.P(protogen.Comments(s))
+		g.P()
+	}
+	if s := loc.LeadingComments; s != "" {
+		g.P(protogen.Comments(s))
+		g.P()
+	}
+}
+
 func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
+	if len(pg.file.Services) == 0 {
+		return pg.g
+	}
+
 	g := pg.g
 	pg.decrearePackageName()
-	if len(pg.file.Services) == 0 {
-		return g
-	}
+	genLeadingComments(g, pg.file.Desc.SourceLocations().ByPath(protoreflect.SourcePath{fileDescriptorProtoSyntaxFieldNumber}))
+	pg.generateSubscriberOption()
+
 	svc := pg.file.Services[0]
 
 	svcName := svc.GoName
@@ -179,6 +214,22 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	}
 
 	return g
+}
+
+func (pg *pubsubGenerator) generateSubscriberOption() {
+	pg.g.P(`// SubscriberOption is the option for HelloWorldSubscriber
+	type SubscriberOption struct {
+		// Interceptors is the slice of SubscriberInterceptor. call before and after HelloWorldSubscriber method. default is empty.
+		Interceptors []gosub.SubscriberInterceptor
+		// SubscribeGracefully is the flag to stop subscribing gracefully. default is false.
+		SubscribeGracefully bool
+	}
+
+	var defaultSubscriberOption = &SubscriberOption{
+		Interceptors:        []gosub.SubscriberInterceptor{},
+		SubscribeGracefully: false,
+	}`)
+
 }
 
 func (pg *pubsubGenerator) generatePublisherFile() *protogen.GeneratedFile {

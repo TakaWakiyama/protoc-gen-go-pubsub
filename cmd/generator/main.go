@@ -6,6 +6,8 @@ import (
 	"google.golang.org/protobuf/compiler/protogen"
 )
 
+const version = "1.0.0"
+
 func main() {
 	usage := "true if publisher false if subscriber"
 	var flags flag.FlagSet
