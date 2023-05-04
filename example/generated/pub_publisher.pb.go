@@ -1,42 +1,77 @@
-// Code generated  by protoc-gen-go-event. DO NOT EDIT.
-// versions:
-// source: pub.proto
-
 package example
 
 import (
 	"context"
+
 	"cloud.google.com/go/pubsub"
+	gopub "github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type HelloWorldServiceClient interface {
-	PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error)
+	PublishHelloWorld(ctx context.Context, event *HelloWorldRequest) (string, error)
+}
+
+type BatchUpdateResult struct {
+	ID    string
+	Error error
+}
+
+type ClientOption struct {
+	Gracefully  bool
+	MaxAttempts int
+	Delay       int
+}
+
+var defaultClientOption = &ClientOption{
+	Gracefully:  false,
+	MaxAttempts: 3,
+	Delay:       1,
 }
 
 type innerHelloWorldServiceClient struct {
-	client *pubsub.Client
+	client          *pubsub.Client
+	nameToTopic     map[string]*pubsub.Topic
+	nameToPublisher map[string]gopub.Publisher
+	option          ClientOption
 }
 
-func NewHelloWorldServiceClient(client *pubsub.Client) *innerHelloWorldServiceClient {
+func NewHelloWorldServiceClient(client *pubsub.Client, option *ClientOption) *innerHelloWorldServiceClient {
+	if option == nil {
+		option = defaultClientOption
+	}
 	return &innerHelloWorldServiceClient{
-		client: client,
+		client:          client,
+		nameToTopic:     make(map[string]*pubsub.Topic),
+		nameToPublisher: make(map[string]gopub.Publisher),
+		option:          *option,
 	}
 }
 
-var topicCache = map[string]*pubsub.Topic{}
-
-func (c *innerHelloWorldServiceClient) getTopic(topic string) (*pubsub.Topic, error) {
-	if t, ok := topicCache[topic]; ok {
+func (c *innerHelloWorldServiceClient) getTopic(topicName string) (*pubsub.Topic, error) {
+	if t, ok := c.nameToTopic[topicName]; ok {
 		return t, nil
 	}
-	t, err := GetOrCreateTopicIfNotExists(c.client, topic)
+	t, err := gopub.GetOrCreateTopicIfNotExists(c.client, topicName)
 	if err != nil {
 		return nil, err
 	}
-	topicCache[topic] = t
+	c.nameToTopic[topicName] = t
 	return t, nil
+}
+
+func (c *innerHelloWorldServiceClient) getPublisher(topicName string) (gopub.Publisher, error) {
+	if p, ok := c.nameToPublisher[topicName]; ok {
+		return p, nil
+	}
+	p := gopub.NewPublisher(c.client, &gopub.PublisherOption{
+		Gracefully:  true,
+		MaxAttempts: 3,
+		Delay:       1,
+	})
+	c.nameToPublisher[topicName] = p
+	return p, nil
 }
 
 func (c *innerHelloWorldServiceClient) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
@@ -46,40 +81,56 @@ func (c *innerHelloWorldServiceClient) publish(topic string, event protoreflect.
 	if err != nil {
 		return "", err
 	}
+	p, err := c.getPublisher(topic)
+	if err != nil {
+		return "", err
+	}
 
 	ev, err := proto.Marshal(event)
 	if err != nil {
 		return "", err
 	}
-
-	result := t.Publish(ctx, &pubsub.Message{
+	return p.Publish(ctx, t, &pubsub.Message{
 		Data: ev,
 	})
-	id, err := result.Get(ctx)
+}
+
+func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchUpdateResult, error) {
+	ctx := context.Background()
+
+	t, err := c.getTopic(topic)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return id, nil
+	p, err := c.getPublisher(topic)
+	if err != nil {
+		return nil, err
+	}
+
+	var msgs []*pubsub.Message
+	for _, e := range events {
+		ev, err := proto.Marshal(e)
+		if err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, &pubsub.Message{
+			Data: ev,
+		})
+	}
+	res, err := p.BatchPublish(ctx, t, msgs)
+	if err != nil {
+		return nil, err
+	}
+	var results []BatchUpdateResult
+	for _, r := range res {
+		results = append(results, BatchUpdateResult{
+			ID:    r.ID,
+			Error: r.Error,
+		})
+	}
+	return results, nil
 }
 
 func (c *innerHelloWorldServiceClient) PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error) {
-	return c.publish("helloworldtopic", req)
-}
-
-// GetOrCreateTopicIfNotExists: topicが存在しない場合は作成する
-func GetOrCreateTopicIfNotExists(c *pubsub.Client, topic string) (*pubsub.Topic, error) {
-	ctx := context.Background()
-	t := c.Topic(topic)
-	ok, err := t.Exists(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		return t, nil
-	}
-	t, err = c.CreateTopic(ctx, topic)
-	if err != nil {
-		return nil, err
-	}
-	return t, nil
+	return c.publish("hello_world", req)
 }

@@ -9,6 +9,8 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	event "github.com/TakaWakiyama/protoc-gen-go-pubsub/example/generated"
+	gopub "github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher"
+	gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"
 	"github.com/google/uuid"
 )
 
@@ -28,8 +30,11 @@ func main() {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	// utils
-	t, _ := event.GetOrCreateTopicIfNotExists(client, "helloworldtopic")
+	t, err := gopub.GetOrCreateTopicIfNotExists(client, "helloworld")
+	if err != nil {
+		fmt.Printf("err: %v\n", err)
+	}
+
 	if _, err := client.CreateSubscription(ctx, "helloworldsubscription", pubsub.SubscriptionConfig{
 		Topic:       t,
 		AckDeadline: 60 * time.Second,
@@ -52,13 +57,13 @@ func subscribe(ctx context.Context, proj string) {
 	fmt.Println("Service Start")
 	s := service{}
 
-	interceptor := func(ctx context.Context, msg interface{}, info event.SubscriberInfo, handler event.SubscriberHandler) error {
+	interceptor := func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
 		fmt.Printf("start interceptor1 \ninfo: %+v\n", info)
 		err := handler(ctx, msg)
 		fmt.Println("end interceptor1")
 		return err
 	}
-	interceptor2 := func(ctx context.Context, msg interface{}, _ event.SubscriberInfo, handler event.SubscriberHandler) error {
+	interceptor2 := func(ctx context.Context, msg interface{}, _ gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
 		fmt.Println("start interceptor2")
 		start := time.Now()
 		err := handler(ctx, msg)
@@ -66,18 +71,25 @@ func subscribe(ctx context.Context, proj string) {
 		return err
 	}
 
-	interceptor3 := func(ctx context.Context, msg interface{}, e event.SubscriberInfo, handler event.SubscriberHandler) error {
+	interceptor3 := func(ctx context.Context, msg interface{}, e gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
 		fmt.Printf("start interceptor3 \n messageID %v \n", e.GetMessage().ID)
 		err := handler(ctx, msg)
 		fmt.Printf("end interceptor3 \n messageID %v \n", e.GetMessage().ID)
 		return err
 	}
+	option := &event.SubscriberOption{
+		Interceptors: []gosub.SubscriberInterceptor{
+			interceptor,
+			interceptor2,
+			interceptor3,
+		},
+	}
 
-	event.Run(s, client, interceptor, interceptor2, interceptor3)
+	event.Run(s, client, option)
 }
 
 func publish(ctx context.Context, client *pubsub.Client) {
-	c := event.NewHelloWorldServiceClient(client)
+	c := event.NewHelloWorldServiceClient(client, nil)
 	msg := uuid.New().String()
 	eid, err := c.PublishHelloWorld(ctx, &event.HelloWorldRequest{
 		Name:          "Taka",

@@ -15,20 +15,31 @@ type HelloWorldSubscriber interface {
 	HelloWorld(ctx context.Context, req *HelloWorldRequest) error
 }
 
-func Run(service HelloWorldSubscriber, client *pubsub.Client, interceptors ...gosub.SubscriberInterceptor) error {
+func Run(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) error {
 	if service == nil {
 		return fmt.Errorf("service is nil")
 	}
 	if client == nil {
 		return fmt.Errorf("client is nil")
 	}
+	if option == nil {
+		option = defaultSubscriberOption
+	}
 	ctx := context.Background()
-	is := newInnerHelloWorldSubscriberSubscriber(service, client, interceptors...)
+	is := newInnerHelloWorldSubscriberSubscriber(service, client, option.Interceptors...)
 
 	if err := is.listenHelloWorld(ctx); err != nil {
 		return err
 	}
 	return nil
+}
+
+type SubscriberOption struct {
+	Interceptors []gosub.SubscriberInterceptor
+}
+
+var defaultSubscriberOption = &SubscriberOption{
+	Interceptors: []gosub.SubscriberInterceptor{},
 }
 
 type innerHelloWorldSubscriberSubscriber struct {
@@ -93,6 +104,3 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 
 	return nil
 }
-
-// TODO: testコード書く
-// Batch処理
