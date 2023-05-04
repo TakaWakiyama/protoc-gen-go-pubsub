@@ -21,6 +21,7 @@ const (
 	GO_IMPORT_TIME         = "time"
 	GO_IMPORT_RETRY        = `retry "github.com/avast/retry-go"`
 	GO_IMPORT_GOSUB        = `gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"`
+	GO_IMPORT_GOPUB        = `gopub "github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher"`
 )
 
 const (
@@ -42,7 +43,9 @@ var allImportSubMods = []string{
 
 var allImportPubMods = []string{
 	GO_IMPORT_CONTEXT,
+	GO_IMPORT_TIME,
 	GO_IMPORT_PUBSUB,
+	GO_IMPORT_GOPUB,
 	GO_IMPORT_PROTO,
 	GO_IMPORT_PROTOREFLECT,
 }
@@ -78,6 +81,7 @@ func (pg *pubsubGenerator) Generate() {
 	}
 }
 
+/* Common Parts*/
 func (pg *pubsubGenerator) decrearePackageName() {
 	g := pg.g
 	g.P("// Code generated  by protoc-gen-go-event. DO NOT EDIT.")
@@ -128,6 +132,208 @@ func genLeadingComments(g *protogen.GeneratedFile, loc protoreflect.SourceLocati
 	}
 }
 
+func getSubOption(m *protogen.Method) (*option.SubOption, error) {
+	options := m.Desc.Options().(*descriptorpb.MethodOptions)
+	ext := proto.GetExtension(options, option.E_SubOption)
+	opt, ok := ext.(*option.SubOption)
+	if !ok {
+		return nil, errors.New("no pubsub option")
+	}
+	return opt, nil
+}
+
+func getPubOption(m *protogen.Method) (*option.PubOption, error) {
+	options := m.Desc.Options().(*descriptorpb.MethodOptions)
+	ext := proto.GetExtension(options, option.E_PubOption)
+	opt, ok := ext.(*option.PubOption)
+	if !ok {
+		return nil, errors.New("no pubsub option")
+	}
+	return opt, nil
+}
+
+/* Publisher Parts */
+func (pg *pubsubGenerator) generatePublisherFile() *protogen.GeneratedFile {
+	if len(pg.file.Services) == 0 {
+		return pg.g
+	}
+	g := pg.g
+	pg.decrearePackageName()
+	//
+	svc := pg.file.Services[0]
+
+	svcName := svc.GoName
+	pg.genClientCode(svcName, svc.Methods, g)
+	return g
+}
+
+// Client Code生成
+func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Method, g *protogen.GeneratedFile) {
+
+	optionDec := `
+	type BatchPublishResult struct {
+		ID    string
+		Error error
+	}
+
+	// ClientOption is the option for HelloWorldServiceClient
+	type ClientOption struct {
+		// Gracefully is the flag to stop publishing gracefully
+		Gracefully bool
+		// MaxAttempts is the max attempts when wait for publishing gracefully
+		MaxAttempts int
+		// Delay is the delay time when wait for publishing gracefully
+		Delay time.Duration
+	}
+
+	var defaultClientOption = &ClientOption{
+		Gracefully:  false,
+		MaxAttempts: 3,
+		Delay:       1 * time.Second,
+	}
+	`
+	g.P(optionDec)
+
+	g.P("type ", svcName, "Client interface {")
+	for _, m := range methods {
+		opt, _ := getPubOption(methods[0])
+		var batchPublish = false
+		if opt.BatchPublish != nil {
+			batchPublish = *opt.BatchPublish
+		}
+		if batchPublish {
+			g.P("BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]*BatchPublishResult, error)")
+		} else {
+			g.P("Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error)")
+		}
+	}
+	g.P("}")
+
+	template := `
+	type inner{{.Name}}Client struct {
+		client          *pubsub.Client
+		nameToTopic     map[string]*pubsub.Topic
+		nameToPublisher map[string]gopub.Publisher
+		option          ClientOption
+	}
+
+	func New{{.Name}}Client(client *pubsub.Client, option *ClientOption) *inner{{.Name}}Client {
+		if option == nil {
+			option = defaultClientOption
+		}
+		return &inner{{.Name}}Client{
+			client:          client,
+			nameToTopic:     make(map[string]*pubsub.Topic),
+			nameToPublisher: make(map[string]gopub.Publisher),
+			option:          *option,
+		}
+	}
+
+	func (c *innerHelloWorldServiceClient) getTopic(topicName string) (*pubsub.Topic, error) {
+		if t, ok := c.nameToTopic[topicName]; ok {
+			return t, nil
+		}
+		t, err := gopub.GetOrCreateTopicIfNotExists(c.client, topicName)
+		if err != nil {
+			return nil, err
+		}
+		c.nameToTopic[topicName] = t
+		return t, nil
+	}
+
+	func (c *innerHelloWorldServiceClient) getPublisher(topicName string) (gopub.Publisher, error) {
+		if p, ok := c.nameToPublisher[topicName]; ok {
+			return p, nil
+		}
+		p := gopub.NewPublisher(c.client, &gopub.PublisherOption{
+			Gracefully:  c.option.Gracefully,
+			MaxAttempts: uint(c.option.MaxAttempts),
+			Delay:       c.option.Delay,
+		})
+		c.nameToPublisher[topicName] = p
+		return p, nil
+	}
+
+
+	func (c *inner{{.Name}}Client) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
+		ctx := context.Background()
+
+		t, err := c.getTopic(topic)
+		if err != nil {
+			return "", err
+		}
+		p, err := c.getPublisher(topic)
+		if err != nil {
+			return "", err
+		}
+
+		ev, err := proto.Marshal(event)
+		if err != nil {
+			return "", err
+		}
+		return p.Publish(ctx, t, &pubsub.Message{
+			Data: ev,
+		})
+	}
+
+	func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
+		ctx := context.Background()
+
+		t, err := c.getTopic(topic)
+		if err != nil {
+			return nil, err
+		}
+		p, err := c.getPublisher(topic)
+		if err != nil {
+			return nil, err
+		}
+
+		var msgs []*pubsub.Message
+		for _, e := range events {
+			ev, err := proto.Marshal(e)
+			if err != nil {
+				return nil, err
+			}
+			msgs = append(msgs, &pubsub.Message{
+				Data: ev,
+			})
+		}
+		res, err := p.BatchPublish(ctx, t, msgs)
+		if err != nil {
+			return nil, err
+		}
+		var results []BatchPublishResult
+		for _, r := range res {
+			results = append(results, BatchPublishResult{
+				ID:    r.ID,
+				Error: r.Error,
+			})
+		}
+		return results, nil
+	}
+	`
+	constructor := strings.ReplaceAll(template, "{{.Name}}", svcName)
+	g.P(constructor)
+
+	for _, m := range methods {
+		opt, _ := getPubOption(m)
+		var batchPublish = false
+		if opt.BatchPublish != nil {
+			batchPublish = *opt.BatchPublish
+		}
+		if batchPublish {
+			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]*BatchPublishResult, error) {")
+			g.P("return c.batchPublish(", `"`, opt.Topic, `"`, ", req)")
+			g.P("}")
+		} else {
+			g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error) {")
+			g.P("return c.publish(", `"`, opt.Topic, `"`, ", req)")
+			g.P("}")
+		}
+	}
+}
+
+/* Subscriber */
 func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	if len(pg.file.Services) == 0 {
 		return pg.g
@@ -360,131 +566,4 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 		template = strings.Replace(template, "{_opt.AckDeadlineSeconds}", fmt.Sprintf("%d", ackDeadlineSeconds), -1)
 		pg.g.P(template)
 	}
-}
-
-func (pg *pubsubGenerator) generatePublisherFile() *protogen.GeneratedFile {
-	g := pg.g
-	pg.decrearePackageName()
-	if len(pg.file.Services) == 0 {
-		return g
-	}
-	svc := pg.file.Services[0]
-
-	svcName := svc.GoName
-	genClientCode(svcName, svc.Methods, g)
-	// Create Publish Function
-	genCreateTopicFunction(g)
-
-	return g
-}
-
-func getSubOption(m *protogen.Method) (*option.SubOption, error) {
-	options := m.Desc.Options().(*descriptorpb.MethodOptions)
-	ext := proto.GetExtension(options, option.E_SubOption)
-	opt, ok := ext.(*option.SubOption)
-	if !ok {
-		return nil, errors.New("no pubsub option")
-	}
-	return opt, nil
-}
-
-func getPubOption(m *protogen.Method) (*option.PubOption, error) {
-	options := m.Desc.Options().(*descriptorpb.MethodOptions)
-	ext := proto.GetExtension(options, option.E_PubOption)
-	opt, ok := ext.(*option.PubOption)
-	if !ok {
-		return nil, errors.New("no pubsub option")
-	}
-	return opt, nil
-}
-
-// Client Code生成
-func genClientCode(svcName string, methods []*protogen.Method, g *protogen.GeneratedFile) {
-
-	g.P("type ", svcName, "Client interface {")
-	for _, m := range methods {
-		g.P("Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error)")
-	}
-	g.P("}")
-
-	template := `
-	type inner{{.Name}}Client struct {
-		client *pubsub.Client
-	}
-
-	func New{{.Name}}Client(client *pubsub.Client) *inner{{.Name}}Client {
-		return &inner{{.Name}}Client{
-			client: client,
-		}
-	}
-
-	var topicCache = map[string]*pubsub.Topic{}
-
-	func (c *innerHelloWorldServiceClient) getTopic(topic string) (*pubsub.Topic, error) {
-		if t, ok := topicCache[topic]; ok {
-			return t, nil
-		}
-		t, err := GetOrCreateTopicIfNotExists(c.client, topic)
-		if err != nil {
-			return nil, err
-		}
-		topicCache[topic] = t
-		return t, nil
-	}
-
-
-	func (c *inner{{.Name}}Client) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
-		ctx := context.Background()
-
-		t, err := c.getTopic(topic)
-		if err != nil {
-			return "", err
-		}
-
-		ev, err := proto.Marshal(event)
-		if err != nil {
-			return "", err
-		}
-
-		result := t.Publish(ctx, &pubsub.Message{
-			Data: ev,
-		})
-		id, err := result.Get(ctx)
-		if err != nil {
-			return "", err
-		}
-		return id, nil
-	}
-	`
-	constructor := strings.ReplaceAll(template, "{{.Name}}", svcName)
-	g.P(constructor)
-
-	for _, m := range methods {
-		opt, _ := getPubOption(m)
-		g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error) {")
-		g.P("return c.publish(", `"`, opt.Topic, `"`, ", req)")
-		g.P("}")
-	}
-}
-
-func genCreateTopicFunction(g *protogen.GeneratedFile) {
-	funcString := `
-	// GetOrCreateTopicIfNotExists: topicが存在しない場合は作成する
-	func GetOrCreateTopicIfNotExists(c *pubsub.Client, topic string) (*pubsub.Topic, error) {
-		ctx := context.Background()
-		t := c.Topic(topic)
-		ok, err := t.Exists(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			return t, nil
-		}
-		t, err = c.CreateTopic(ctx, topic)
-		if err != nil {
-			return nil, err
-		}
-		return t, nil
-	}`
-	g.P(funcString)
 }

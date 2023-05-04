@@ -11,7 +11,7 @@ message SubOption {
 	string topic = 1;
 	// subscription name
 	string subscription = 2;
-	// ack deadline seconds
+	// ack deadline seconds default 60(second)
 	optional uint32 ackDeadlineSeconds = 3;
 }
 

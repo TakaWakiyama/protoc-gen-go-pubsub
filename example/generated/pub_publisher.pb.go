@@ -1,8 +1,14 @@
+// Code generated  by protoc-gen-go-event. DO NOT EDIT.
+// versions:
+// - protoc-gen-go-pubsub v1.0.0
+// - protoc             v3.21.12
+// source: pub.proto
+
 package example
 
 import (
 	"context"
-
+	"time"
 	"cloud.google.com/go/pubsub"
 	gopub "github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher"
 	"google.golang.org/protobuf/proto"
@@ -21,17 +27,17 @@ type ClientOption struct {
 	// MaxAttempts is the max attempts when wait for publishing gracefully
 	MaxAttempts int
 	// Delay is the delay time when wait for publishing gracefully
-	Delay int
+	Delay time.Duration
 }
 
 var defaultClientOption = &ClientOption{
 	Gracefully:  false,
 	MaxAttempts: 3,
-	Delay:       1,
+	Delay:       1 * time.Second,
 }
 
 type HelloWorldServiceClient interface {
-	PublishHelloWorld(ctx context.Context, event *HelloWorldRequest) (string, error)
+	PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error)
 }
 
 type innerHelloWorldServiceClient struct {
@@ -70,9 +76,9 @@ func (c *innerHelloWorldServiceClient) getPublisher(topicName string) (gopub.Pub
 		return p, nil
 	}
 	p := gopub.NewPublisher(c.client, &gopub.PublisherOption{
-		Gracefully:  true,
-		MaxAttempts: 3,
-		Delay:       1,
+		Gracefully:  c.option.Gracefully,
+		MaxAttempts: uint(c.option.MaxAttempts),
+		Delay:       c.option.Delay,
 	})
 	c.nameToPublisher[topicName] = p
 	return p, nil
@@ -136,5 +142,5 @@ func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []proto
 }
 
 func (c *innerHelloWorldServiceClient) PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error) {
-	return c.publish("hello_world", req)
+	return c.publish("helloworldtopic", req)
 }
