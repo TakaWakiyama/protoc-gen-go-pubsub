@@ -2,7 +2,6 @@ syntax = "proto3";
 package events;
 option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
 
-/* TODO: PathImportができないので、どこかで修正する */
 import "option.proto";
 
 message HelloWorldRequest {
