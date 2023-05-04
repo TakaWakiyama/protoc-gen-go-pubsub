@@ -33,7 +33,6 @@ var defaultPublisherOption = PublisherOption{
 type Publisher interface {
 	Publish(ctx context.Context, topic *pubsub.Topic, msg *pubsub.Message) (string, error)
 	BatchPublish(ctx context.Context, topic *pubsub.Topic, msgs []*pubsub.Message) ([]BatchPublishResult, error)
-	GetOrCreateTopicIfNotExists(topicName string) (*pubsub.Topic, error)
 }
 
 type innerPublisher struct {
@@ -98,21 +97,6 @@ func (p *innerPublisher) BatchPublish(ctx context.Context, topic *pubsub.Topic, 
 	return out, nil
 }
 
-func (p *innerPublisher) GetOrCreateTopicIfNotExists(topicName string) (*pubsub.Topic, error) {
-	topic := p.client.Topic(topicName)
-	exists, err := topic.Exists(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		topic, err = p.client.CreateTopic(context.Background(), topicName)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return topic, nil
-}
-
 func (p *innerPublisher) start() string {
 	if !p.option.Gracefully {
 		return ""
@@ -148,4 +132,19 @@ func (p *innerPublisher) gracefullyStopIFSet() {
 			retry.Delay(p.option.Delay),
 		)
 	}()
+}
+
+func GetOrCreateTopicIfNotExists(client *pubsub.Client, topicName string) (*pubsub.Topic, error) {
+	topic := client.Topic(topicName)
+	exists, err := topic.Exists(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		topic, err = client.CreateTopic(context.Background(), topicName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return topic, nil
 }
