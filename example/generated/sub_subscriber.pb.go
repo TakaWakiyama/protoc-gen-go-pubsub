@@ -1,10 +1,15 @@
+// Code generated  by protoc-gen-go-event. DO NOT EDIT.
+// versions:
+// - protoc-gen-go-pubsub v1.0.0
+// - protoc             v3.21.12
+// source: sub.proto
+
 package example
 
 import (
 	"context"
 	"fmt"
 	"time"
-
 	"cloud.google.com/go/pubsub"
 	gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"
 	retry "github.com/avast/retry-go"
@@ -25,6 +30,7 @@ var defaultSubscriberOption = &SubscriberOption{
 }
 
 type HelloWorldSubscriber interface {
+	// Hello world is super method
 	HelloWorld(ctx context.Context, req *HelloWorldRequest) error
 }
 
@@ -40,7 +46,6 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	}
 	ctx := context.Background()
 	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
-
 	if err := is.listenHelloWorld(ctx); err != nil {
 		return err
 	}
@@ -48,9 +53,10 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 }
 
 type innerHelloWorldSubscriberSubscriber struct {
-	service HelloWorldSubscriber
-	client  *pubsub.Client
-	option  SubscriberOption
+	service  HelloWorldSubscriber
+	client   *pubsub.Client
+	option   SubscriberOption
+	accessor PubSubAccessor
 }
 
 func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) *innerHelloWorldSubscriberSubscriber {
@@ -58,9 +64,10 @@ func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client
 		option = defaultSubscriberOption
 	}
 	return &innerHelloWorldSubscriberSubscriber{
-		service: service,
-		client:  client,
-		option:  *option,
+		service:  service,
+		client:   client,
+		option:   *option,
+		accessor: NewPubSubAccessor(),
 	}
 }
 
@@ -69,7 +76,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 	topicName := "helloworldtopic"
 	var sub *pubsub.Subscription
 	if err := retry.Do(func() error {
-		tmp, err := CreateHelloWorldSubscriptionIFNotExists(ctx, is.client)
+		tmp, err := is.accessor.CreateHelloWorldSubscriptionIFNotExists(ctx, is.client)
 		if err != nil {
 			return err
 		}
@@ -93,6 +100,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		}
 		msg.Ack()
 	}
+
 	if is.option.SubscribeGracefully {
 		gosub.SubscribeGracefully(sub, ctx, callback, nil)
 	} else {
@@ -102,22 +110,32 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 	return nil
 }
 
-func CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
+// PubSubAccessor: accessor for HelloWorldPubSub
+type PubSubAccessor interface {
+	CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error)
+	CreateHelloWorldSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error)
+}
+
+type pubSubAccessorImpl struct{}
+
+func NewPubSubAccessor() PubSubAccessor {
+	return &pubSubAccessorImpl{}
+}
+
+func (c *pubSubAccessorImpl) CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
 	topicName := "helloworldtopic"
 	t := client.Topic(topicName)
-
 	exsits, err := t.Exists(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check topic exsits: %w", err)
 	}
-
 	if !exsits {
 		return client.CreateTopic(ctx, topicName)
 	}
 	return t, nil
 }
 
-func CreateHelloWorldSubscriptionIFNotExists(
+func (c *pubSubAccessorImpl) CreateHelloWorldSubscriptionIFNotExists(
 	ctx context.Context,
 	client *pubsub.Client,
 ) (*pubsub.Subscription, error) {
