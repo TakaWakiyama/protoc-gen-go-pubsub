@@ -4,24 +4,36 @@ option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
 
 import "option.proto";
 
-message HelloWorldRequest {
+message HelloWorldEvent {
     string eventID = 1;
     string name = 2;
     int64 unixTimeStamp = 3;
 }
 
-message HogeEventRequest {
+message HogeEvent {
     string eventID = 1;
     string message = 2;
-    int64 unixTimeStamp = 3;
+    bool isHoge = 3;
+    int64 unixTimeStamp = 4;
 }
 
-message HelloWorldResponse {}
+message Empty {}
 
 service  HelloWorldService {
-    rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse) {
+    rpc HelloWorld(HelloWorldEvent) returns (Empty) {
         option (option.pubOption) = {
 			topic: "helloworldtopic"
 		};
+    }
+    rpc HogeCreated(HogeEvent) returns (Empty) {
+        option (option.pubOption) = {
+            topic: "hogeCreated"
+        };
+    }
+    rpc HogesCreated(HogeEvent) returns (Empty) {
+        option (option.pubOption) = {
+            topic: "hogeCreated"
+            batchPublish: true
+        };
     }
 }

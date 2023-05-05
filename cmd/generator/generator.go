@@ -521,7 +521,7 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 	for _, m := range ms {
 		opt, _ := getSubOption(m)
 		template := `
-		func (c *pubSubAccessorImpl) CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
+		func (c *pubSubAccessorImpl) Create{_m.GoName}TopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
 			topicName := "{_opt.Topic}"
 			t := client.Topic(topicName)
 			exsits, err := t.Exists(ctx)
@@ -534,7 +534,7 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 			return t, nil
 		}
 
-		func (c *pubSubAccessorImpl) CreateHelloWorldSubscriptionIFNotExists(
+		func (c *pubSubAccessorImpl) Create{_m.GoName}SubscriptionIFNotExists(
 			ctx context.Context,
 			client *pubsub.Client,
 		) (*pubsub.Subscription, error) {
@@ -559,6 +559,7 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 		}`
 		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
 		template = strings.Replace(template, "{_opt.Subscription}", opt.Subscription, -1)
+		template = strings.Replace(template, "{_m.GoName}", m.GoName, -1)
 		var ackDeadlineSeconds uint32 = 60
 		if opt.AckDeadlineSeconds != nil {
 			ackDeadlineSeconds = *opt.AckDeadlineSeconds

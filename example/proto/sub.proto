@@ -7,10 +7,17 @@ import "pub.proto";
 
 service  HelloWorldSubscriber {
     /* Hello world is super method */
-    rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse) {
+    rpc HelloWorld(HelloWorldEvent) returns (Empty) {
         option (option.subOption) = {
 			topic: "helloworldtopic"
 			subscription: "helloworldsubscription"
 		};
+    }
+    rpc OnHoge(HogeEvent) returns (Empty) {
+        option (option.subOption) = {
+            topic: "hogeCreated"
+            subscription: "onHogeCreated"
+            ackDeadlineSeconds: 30
+        };
     }
 }

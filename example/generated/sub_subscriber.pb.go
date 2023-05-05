@@ -31,7 +31,8 @@ var defaultSubscriberOption = &SubscriberOption{
 
 type HelloWorldSubscriber interface {
 	// Hello world is super method
-	HelloWorld(ctx context.Context, req *HelloWorldRequest) error
+	HelloWorld(ctx context.Context, req *HelloWorldEvent) error
+	OnHoge(ctx context.Context, req *HogeEvent) error
 }
 
 func Run(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) error {
@@ -47,6 +48,9 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	ctx := context.Background()
 	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
 	if err := is.listenHelloWorld(ctx); err != nil {
+		return err
+	}
+	if err := is.listenOnHoge(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -87,13 +91,52 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld", msg)
-		var event HelloWorldRequest
+		var event HelloWorldEvent
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
 			msg.Nack()
 			return
 		}
 		if err := gosub.Handle(is.option.Interceptors, ctx, &event, info, func(ctx context.Context, req interface{}) error {
-			return is.service.HelloWorld(ctx, req.(*HelloWorldRequest))
+			return is.service.HelloWorld(ctx, req.(*HelloWorldEvent))
+		}); err != nil {
+			msg.Nack()
+			return
+		}
+		msg.Ack()
+	}
+
+	if is.option.SubscribeGracefully {
+		gosub.SubscribeGracefully(sub, ctx, callback, nil)
+	} else {
+		sub.Receive(ctx, callback)
+	}
+
+	return nil
+}
+
+func (is *innerHelloWorldSubscriberSubscriber) listenOnHoge(ctx context.Context) error {
+	subscriptionName := "onHogeCreated"
+	topicName := "hogeCreated"
+	var sub *pubsub.Subscription
+	if err := retry.Do(func() error {
+		tmp, err := is.accessor.CreateOnHogeSubscriptionIFNotExists(ctx, is.client)
+		if err != nil {
+			return err
+		}
+		sub = tmp
+		return nil
+	}); err != nil {
+		return err
+	}
+	callback := func(ctx context.Context, msg *pubsub.Message) {
+		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "OnHoge", msg)
+		var event HogeEvent
+		if err := proto.Unmarshal(msg.Data, &event); err != nil {
+			msg.Nack()
+			return
+		}
+		if err := gosub.Handle(is.option.Interceptors, ctx, &event, info, func(ctx context.Context, req interface{}) error {
+			return is.service.OnHoge(ctx, req.(*HogeEvent))
 		}); err != nil {
 			msg.Nack()
 			return
@@ -114,6 +157,9 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 type PubSubAccessor interface {
 	CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error)
 	CreateHelloWorldSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error)
+
+	CreateOnHogeTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error)
+	CreateOnHogeSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error)
 }
 
 type pubSubAccessorImpl struct{}
@@ -154,6 +200,43 @@ func (c *pubSubAccessorImpl) CreateHelloWorldSubscriptionIFNotExists(
 		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
 			Topic:       t,
 			AckDeadline: 60 * time.Second,
+		})
+	}
+	return sub, nil
+}
+
+func (c *pubSubAccessorImpl) CreateOnHogeTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
+	topicName := "hogeCreated"
+	t := client.Topic(topicName)
+	exsits, err := t.Exists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check topic exsits: %w", err)
+	}
+	if !exsits {
+		return client.CreateTopic(ctx, topicName)
+	}
+	return t, nil
+}
+
+func (c *pubSubAccessorImpl) CreateOnHogeSubscriptionIFNotExists(
+	ctx context.Context,
+	client *pubsub.Client,
+) (*pubsub.Subscription, error) {
+	subscriptionName := "onHogeCreated"
+	topicName := "hogeCreated"
+	t := client.Topic(topicName)
+	if exsits, err := t.Exists(ctx); !exsits {
+		return nil, fmt.Errorf("topic does not exsit: %w", err)
+	}
+	sub := client.Subscription(subscriptionName)
+	exsits, err := sub.Exists(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check subscription exsits: %w", err)
+	}
+	if !exsits {
+		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
+			Topic:       t,
+			AckDeadline: 30 * time.Second,
 		})
 	}
 	return sub, nil

@@ -37,7 +37,9 @@ var defaultClientOption = &ClientOption{
 }
 
 type HelloWorldServiceClient interface {
-	PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error)
+	PublishHelloWorld(ctx context.Context, req *HelloWorldEvent) (string, error)
+	PublishHogeCreated(ctx context.Context, req *HogeEvent) (string, error)
+	PublishHogesCreated(ctx context.Context, req *HogeEvent) (string, error)
 }
 
 type innerHelloWorldServiceClient struct {
@@ -141,6 +143,12 @@ func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []proto
 	return results, nil
 }
 
-func (c *innerHelloWorldServiceClient) PublishHelloWorld(ctx context.Context, req *HelloWorldRequest) (string, error) {
+func (c *innerHelloWorldServiceClient) PublishHelloWorld(ctx context.Context, req *HelloWorldEvent) (string, error) {
 	return c.publish("helloworldtopic", req)
+}
+func (c *innerHelloWorldServiceClient) PublishHogeCreated(ctx context.Context, req *HogeEvent) (string, error) {
+	return c.publish("hogeCreated", req)
+}
+func (c *innerHelloWorldServiceClient) BatchPublishHogesCreated(ctx context.Context, req []*HogeEvent) ([]*BatchPublishResult, error) {
+	return c.batchPublish("hogeCreated", req)
 }
