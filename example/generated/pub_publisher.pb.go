@@ -149,6 +149,10 @@ func (c *innerHelloWorldServiceClient) PublishHelloWorld(ctx context.Context, re
 func (c *innerHelloWorldServiceClient) PublishHogeCreated(ctx context.Context, req *HogeEvent) (string, error) {
 	return c.publish("hogeCreated", req)
 }
-func (c *innerHelloWorldServiceClient) BatchPublishHogesCreated(ctx context.Context, req []*HogeEvent) ([]*BatchPublishResult, error) {
-	return c.batchPublish("hogeCreated", req)
+func (c *innerHelloWorldServiceClient) BatchPublishHogesCreated(ctx context.Context, req []*HogeEvent) ([]BatchPublishResult, error) {
+	o := make([]protoreflect.ProtoMessage, len(req))
+	for i, v := range req {
+		o[i] = v
+	}
+	return c.batchPublish("hogeCreated", o)
 }

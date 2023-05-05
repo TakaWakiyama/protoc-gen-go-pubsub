@@ -91,11 +91,23 @@ func subscribe(ctx context.Context, proj string) {
 func publish(ctx context.Context, client *pubsub.Client) {
 	c := event.NewHelloWorldServiceClient(client, nil)
 	msg := uuid.New().String()
-	eid, err := c.PublishHelloWorld(ctx, &event.HelloWorldRequest{
+	eid, err := c.PublishHelloWorld(ctx, &event.HelloWorldEvent{
 		Name:          "Taka",
 		EventID:       msg,
 		UnixTimeStamp: time.Now().Unix(),
 	})
 	fmt.Printf("eid: %v\n", eid)
 	fmt.Printf("err: %v\n", err)
+	c.BatchPublishHogesCreated(ctx, []*event.HogeEvent{
+		{
+			Message:       "Taka",
+			EventID:       msg,
+			UnixTimeStamp: time.Now().Unix(),
+		},
+		{
+			Message:       "Taka",
+			EventID:       msg,
+			UnixTimeStamp: time.Now().Unix(),
+		},
+	})
 }
