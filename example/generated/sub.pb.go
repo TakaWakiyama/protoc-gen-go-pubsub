@@ -7,7 +7,6 @@
 package example
 
 import (
-	_ "github.com/TakaWakiyama/protoc-gen-go-pubsub/example/option"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
