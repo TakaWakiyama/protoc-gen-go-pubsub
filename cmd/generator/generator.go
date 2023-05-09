@@ -382,7 +382,13 @@ func (pg *pubsubGenerator) generateSubscriberOption() {
 	var defaultSubscriberOption = &SubscriberOption{
 		Interceptors:        []gosub.SubscriberInterceptor{},
 		SubscribeGracefully: false,
-	}`)
+	}
+
+	var retryOpts = []retry.Option{
+		retry.Delay(1 * time.Second),
+		retry.Attempts(3),
+	}
+	`)
 }
 
 func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
@@ -453,7 +459,7 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 		}
 		sub = tmp
 		return nil
-	}); err != nil {
+	}, retryOpts...); err != nil {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
