@@ -50,21 +50,24 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	if option == nil {
 		option = defaultSubscriberOption
 	}
-	ctx := context.Background()
 	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
+	ctx, cancel := context.WithCancel(context.Background())
+	errChan := make(chan error)
 
 	go func() {
 		if err := is.listenHelloWorld(ctx); err != nil {
-			panic(err)
+			errChan <- err
 		}
 	}()
 
-
-	if err := is.listenOnHoge(ctx); err != nil {
-		return err
-	}
-
-	return nil
+	go func() {
+		if err := is.listenOnHoge(ctx); err != nil {
+			errChan <- err
+		}
+	}()
+	err := <-errChan
+	cancel()
+	return err
 }
 
 type innerHelloWorldSubscriberSubscriber struct {

@@ -402,18 +402,23 @@ func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
 		if option == nil {
 			option = defaultSubscriberOption
 		}
-		ctx := context.Background()
 		is := newInner{_svcName}Subscriber(service, client, option)
+		ctx, cancel := context.WithCancel(context.Background())
+		errChan := make(chan error)
 		%s
-		return nil
-	}
-	`
+		err := <-errChan
+		cancel()
+		return err
+	}`
 	template = strings.Replace(template, "{_svcName}", svc.GoName, -1)
 	fs := make([]string, 0, len(svc.Methods))
 	for _, m := range svc.Methods {
-		l := `if err := is.listen{_methodName}(ctx); err != nil {
-			return err
-		}`
+		l := `
+		go func() {
+			if err := is.listen{_methodName}(ctx); err != nil {
+				errChan <- err
+			}
+		}()`
 		l = strings.Replace(l, "{_methodName}", m.GoName, -1)
 		fs = append(fs, l)
 	}
