@@ -1,8 +1,6 @@
 syntax = "proto3";
 package option;
 
-option go_package = "gengopubsub/option";
-
 import "google/protobuf/descriptor.proto";
 
 // Subscriber option
@@ -13,6 +11,11 @@ message SubOption {
 	string subscription = 2;
 	// ack deadline seconds default 60(second)
 	optional uint32 ackDeadlineSeconds = 3;
+	// exactly once default false
+	optional bool enableExactlyOnceDelivery = 4;
+	// TODO:
+	// guranatee order default false
+	// optional bool guaranteeOrder = 5;
 }
 
 // Publisher option

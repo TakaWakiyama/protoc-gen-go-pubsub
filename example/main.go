@@ -9,16 +9,19 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	event "github.com/TakaWakiyama/protoc-gen-go-pubsub/example/generated"
-	gopub "github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher"
 	gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"
 	"github.com/google/uuid"
 )
 
 type service struct{}
 
-func (s service) HelloWorld(ctx context.Context, req *event.HelloWorldRequest) error {
+func (s service) HelloWorld(ctx context.Context, req *event.HelloWorldEvent) error {
 	fmt.Printf("HelloWorld Event req: %+v\n", req)
 	return nil
+}
+
+func (s service) OnHoge(ctx context.Context, req *event.HogeEvent) error {
+	panic("implement me")
 }
 
 func main() {
@@ -30,17 +33,16 @@ func main() {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	t, err := gopub.GetOrCreateTopicIfNotExists(client, "helloworld")
-	if err != nil {
-		fmt.Printf("err: %v\n", err)
-	}
+	/*
+		acc := event.NewPubSubAccessor()
+			t, err := acc.CreateHelloWorldTopicIFNotExists(ctx, client)
+			fmt.Printf("t: %v\n", t)
+			fmt.Printf("err: %v\n", err)
+			s, e := acc.CreateHelloWorldSubscriptionIFNotExists(ctx, client)
+			fmt.Printf("s: %v\n", s)
+			fmt.Printf("e: %v\n", e)
+	*/
 
-	if _, err := client.CreateSubscription(ctx, "helloworldsubscription", pubsub.SubscriptionConfig{
-		Topic:       t,
-		AckDeadline: 60 * time.Second,
-	}); err != nil {
-		fmt.Printf("err: %v\n", err)
-	}
 	fun := os.Getenv("PFUNC")
 	if fun == "" {
 		subscribe(ctx, proj)
@@ -85,7 +87,11 @@ func subscribe(ctx context.Context, proj string) {
 		},
 	}
 
-	event.Run(s, client, option)
+	if err := event.Run(s, client, option); err != nil {
+		fmt.Printf("err: %v\n", err)
+	} else {
+		fmt.Println("Service End")
+	}
 }
 
 func publish(ctx context.Context, client *pubsub.Client) {
@@ -97,7 +103,17 @@ func publish(ctx context.Context, client *pubsub.Client) {
 		UnixTimeStamp: time.Now().Unix(),
 	})
 	fmt.Printf("eid: %v\n", eid)
+	res, err := c.PublishHogeCreated(ctx, &event.HogeEvent{
+		Message:       "Taka",
+		EventID:       msg,
+		UnixTimeStamp: time.Now().Unix(),
+	})
+	fmt.Printf("res: %v\n", res)
 	fmt.Printf("err: %v\n", err)
+
+	if 1 == 1 {
+		return
+	}
 	c.BatchPublishHogesCreated(ctx, []*event.HogeEvent{
 		{
 			Message:       "Taka",

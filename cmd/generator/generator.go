@@ -322,8 +322,12 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 			batchPublish = *opt.BatchPublish
 		}
 		if batchPublish {
-			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]*BatchPublishResult, error) {")
-			g.P("return c.batchPublish(", `"`, opt.Topic, `"`, ", req)")
+			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]BatchPublishResult, error) {")
+			g.P(`events := make([]protoreflect.ProtoMessage, len(req))
+			for i, r := range req {
+				events[i] = r
+			}`)
+			g.P("return c.batchPublish(", `"`, opt.Topic, `"`, ", events)")
 			g.P("}")
 		} else {
 			g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error) {")
@@ -378,7 +382,13 @@ func (pg *pubsubGenerator) generateSubscriberOption() {
 	var defaultSubscriberOption = &SubscriberOption{
 		Interceptors:        []gosub.SubscriberInterceptor{},
 		SubscribeGracefully: false,
-	}`)
+	}
+
+	var retryOpts = []retry.Option{
+		retry.Delay(1 * time.Second),
+		retry.Attempts(3),
+	}
+	`)
 }
 
 func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
@@ -392,18 +402,23 @@ func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
 		if option == nil {
 			option = defaultSubscriberOption
 		}
-		ctx := context.Background()
 		is := newInner{_svcName}Subscriber(service, client, option)
+		ctx, cancel := context.WithCancel(context.Background())
+		errChan := make(chan error)
 		%s
-		return nil
-	}
-	`
+		err := <-errChan
+		cancel()
+		return err
+	}`
 	template = strings.Replace(template, "{_svcName}", svc.GoName, -1)
 	fs := make([]string, 0, len(svc.Methods))
 	for _, m := range svc.Methods {
-		l := `if err := is.listen{_methodName}(ctx); err != nil {
-			return err
-		}`
+		l := `
+		go func() {
+			if err := is.listen{_methodName}(ctx); err != nil {
+				errChan <- err
+			}
+		}()`
 		l = strings.Replace(l, "{_methodName}", m.GoName, -1)
 		fs = append(fs, l)
 	}
@@ -449,10 +464,15 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 		}
 		sub = tmp
 		return nil
-	}); err != nil {
+	}, retryOpts...); err != nil {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg.Nack()
+			}
+		}()
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "{_m.GoName}", msg)
 		var event {_m.Input}
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
@@ -553,6 +573,7 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 				return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
 					Topic:       t,
 					AckDeadline: {_opt.AckDeadlineSeconds} * time.Second,
+					EnableExactlyOnceDelivery: {_opt.EnableExactlyOnceDelivery},
 				})
 			}
 			return sub, nil
@@ -565,6 +586,11 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 			ackDeadlineSeconds = *opt.AckDeadlineSeconds
 		}
 		template = strings.Replace(template, "{_opt.AckDeadlineSeconds}", fmt.Sprintf("%d", ackDeadlineSeconds), -1)
+		var enableExactlyOnceDelivery bool
+		if opt.EnableExactlyOnceDelivery != nil {
+			enableExactlyOnceDelivery = *opt.EnableExactlyOnceDelivery
+		}
+		template = strings.Replace(template, "{_opt.EnableExactlyOnceDelivery}", fmt.Sprintf("%t", enableExactlyOnceDelivery), -1)
 		pg.g.P(template)
 	}
 }

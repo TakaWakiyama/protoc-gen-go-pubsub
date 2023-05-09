@@ -2,6 +2,10 @@ module github.com/TakaWakiyama/protoc-gen-go-pubsub/example
 
 go 1.19
 
+replace github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher => ../cmd/publisher
+
+replace github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber => ../cmd/subscriber
+
 require (
 	cloud.google.com/go/pubsub v1.30.1
 	github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher v0.0.0-00010101000000-000000000000
@@ -10,10 +14,6 @@ require (
 	github.com/google/uuid v1.3.0
 	google.golang.org/protobuf v1.30.0
 )
-
-replace github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber => ../cmd/subscriber
-
-replace github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher => ../cmd/publisher
 
 require (
 	cloud.google.com/go v0.110.0 // indirect

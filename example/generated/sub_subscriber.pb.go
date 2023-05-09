@@ -29,6 +29,11 @@ var defaultSubscriberOption = &SubscriberOption{
 	SubscribeGracefully: false,
 }
 
+var retryOpts = []retry.Option{
+	retry.Delay(1 * time.Second),
+	retry.Attempts(3),
+}
+
 type HelloWorldSubscriber interface {
 	// Hello world is super method
 	HelloWorld(ctx context.Context, req *HelloWorldEvent) error
@@ -45,15 +50,24 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	if option == nil {
 		option = defaultSubscriberOption
 	}
-	ctx := context.Background()
 	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
-	if err := is.listenHelloWorld(ctx); err != nil {
-		return err
-	}
-	if err := is.listenOnHoge(ctx); err != nil {
-		return err
-	}
-	return nil
+	ctx, cancel := context.WithCancel(context.Background())
+	errChan := make(chan error)
+
+	go func() {
+		if err := is.listenHelloWorld(ctx); err != nil {
+			errChan <- err
+		}
+	}()
+
+	go func() {
+		if err := is.listenOnHoge(ctx); err != nil {
+			errChan <- err
+		}
+	}()
+	err := <-errChan
+	cancel()
+	return err
 }
 
 type innerHelloWorldSubscriberSubscriber struct {
@@ -86,10 +100,15 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		}
 		sub = tmp
 		return nil
-	}); err != nil {
+	}, retryOpts...); err != nil {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg.Nack()
+			}
+		}()
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld", msg)
 		var event HelloWorldEvent
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
@@ -125,10 +144,15 @@ func (is *innerHelloWorldSubscriberSubscriber) listenOnHoge(ctx context.Context)
 		}
 		sub = tmp
 		return nil
-	}); err != nil {
+	}, retryOpts...); err != nil {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg.Nack()
+			}
+		}()
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "OnHoge", msg)
 		var event HogeEvent
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
@@ -198,8 +222,9 @@ func (c *pubSubAccessorImpl) CreateHelloWorldSubscriptionIFNotExists(
 	}
 	if !exsits {
 		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-			Topic:       t,
-			AckDeadline: 60 * time.Second,
+			Topic:                     t,
+			AckDeadline:               60 * time.Second,
+			EnableExactlyOnceDelivery: false,
 		})
 	}
 	return sub, nil
@@ -235,8 +260,9 @@ func (c *pubSubAccessorImpl) CreateOnHogeSubscriptionIFNotExists(
 	}
 	if !exsits {
 		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-			Topic:       t,
-			AckDeadline: 30 * time.Second,
+			Topic:                     t,
+			AckDeadline:               30 * time.Second,
+			EnableExactlyOnceDelivery: false,
 		})
 	}
 	return sub, nil

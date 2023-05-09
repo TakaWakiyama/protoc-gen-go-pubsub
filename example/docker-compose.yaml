@@ -22,7 +22,9 @@ services:
     ports:
       - 8085:8085
   publisher:
-    build: .
+    build:
+      context: ..
+      dockerfile: ./example/Dockerfile
     environment:
       - PFUNC="p"
       - PUBSUB_EMULATOR_HOST=pubsub:8085
@@ -30,7 +32,9 @@ services:
     depends_on:
       - pubsub
   subscriber:
-    build: .
+    build:
+      context: ..
+      dockerfile: ./example/Dockerfile
     depends_on:
       - pubsub
       - redis
