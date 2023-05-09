@@ -7,7 +7,7 @@ generate_option:
 
 copy_option:
 	mkdir -p ./example/p
-	cp proto/option.proto ./example/proto/option/
+	cp proto/option.proto ./example/proto/option.proto
 
 generate_sample_subscriber:
 	protoc \

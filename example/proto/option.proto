@@ -10,6 +10,11 @@ message SubOption {
 	string subscription = 2;
 	// ack deadline seconds
 	optional uint32 ackDeadlineSeconds = 3;
+	// exactly once default false
+	optional bool exactlyOnceDelivery = 4;
+	// TODO:
+	// guranatee order default false
+	// optional bool guaranteeOrder = 5;
 }
 
 message PubOption {

@@ -222,8 +222,9 @@ func (c *pubSubAccessorImpl) CreateHelloWorldSubscriptionIFNotExists(
 	}
 	if !exsits {
 		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-			Topic:       t,
-			AckDeadline: 60 * time.Second,
+			Topic:                     t,
+			AckDeadline:               60 * time.Second,
+			EnableExactlyOnceDelivery: false,
 		})
 	}
 	return sub, nil
@@ -259,8 +260,9 @@ func (c *pubSubAccessorImpl) CreateOnHogeSubscriptionIFNotExists(
 	}
 	if !exsits {
 		return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
-			Topic:       t,
-			AckDeadline: 30 * time.Second,
+			Topic:                     t,
+			AckDeadline:               30 * time.Second,
+			EnableExactlyOnceDelivery: false,
 		})
 	}
 	return sub, nil

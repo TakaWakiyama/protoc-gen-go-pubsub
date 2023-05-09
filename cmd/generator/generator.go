@@ -573,6 +573,7 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 				return client.CreateSubscription(ctx, subscriptionName, pubsub.SubscriptionConfig{
 					Topic:       t,
 					AckDeadline: {_opt.AckDeadlineSeconds} * time.Second,
+					EnableExactlyOnceDelivery: {_opt.EnableExactlyOnceDelivery},
 				})
 			}
 			return sub, nil
@@ -585,6 +586,11 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 			ackDeadlineSeconds = *opt.AckDeadlineSeconds
 		}
 		template = strings.Replace(template, "{_opt.AckDeadlineSeconds}", fmt.Sprintf("%d", ackDeadlineSeconds), -1)
+		var enableExactlyOnceDelivery bool
+		if opt.EnableExactlyOnceDelivery != nil {
+			enableExactlyOnceDelivery = *opt.EnableExactlyOnceDelivery
+		}
+		template = strings.Replace(template, "{_opt.EnableExactlyOnceDelivery}", fmt.Sprintf("%t", enableExactlyOnceDelivery), -1)
 		pg.g.P(template)
 	}
 }
