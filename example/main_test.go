@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -14,10 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/stretchr/testify/assert"
 )
 
-const defaultTimeout = 10 * time.Second
+// const defaultTimeout = 10 * time.Second
 
 type onCalledFunc = func(ctx context.Context, req proto.Message) error
 
@@ -45,6 +43,23 @@ func newsub(cbh onCalledFunc, cnh onCalledFunc) sub {
 	}
 }
 
+func setup() {
+	ctx := context.Background()
+	proj := os.Getenv("PROJECT_ID")
+	client, err := pubsub.NewClient(ctx, proj)
+	if err != nil {
+		log.Fatalf("Could not create pubsub Client: %v", err)
+	}
+	// errorになっているメッセージを全てflushする
+	go func() {
+		event.Run(service{}, client, nil)
+	}()
+	time.Sleep(300 * time.Millisecond)
+}
+
+// go test -timeout=30s
+
+// should settimeout
 func Test(t *testing.T) {
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
@@ -53,23 +68,19 @@ func Test(t *testing.T) {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
+	c := event.NewHelloWorldServiceClient(client, nil)
+	acc := event.NewPubSubAccessor()
+	acc.CreateHelloWorldTopicIFNotExists(ctx, client)
 
 	want := &event.HelloWorldEvent{
 		Name:          "a",
 		EventID:       "1234",
 		UnixTimeStamp: time.Now().Unix(),
 	}
-	c := event.NewHelloWorldServiceClient(client, nil)
 	c.PublishHelloWorld(ctx, want)
-	if err != nil {
-		log.Fatalf("Could not publish message: %v", err)
-	}
-	acc := event.NewPubSubAccessor()
-	acc.CreateHelloWorldTopicIFNotExists(ctx, client)
 
 	resultChan := make(chan *event.HelloWorldEvent)
 	helloCalled := func(ctx context.Context, e proto.Message) error {
-		fmt.Printf("e: %v\n", e)
 		resultChan <- e.(*event.HelloWorldEvent)
 		return nil
 	}
@@ -87,7 +98,7 @@ func Test(t *testing.T) {
 }
 
 // Publish後にSubscriberMethodが呼ばれていること。データが正しく引数にわたっていること。
-// err if topic does not exist
+// err if topic does not exist errになること
 // BatchPublish後にSubscriberMethodが呼ばれていること。データが正しく引数にわたっていること。
 // SubscriberMethodがpanicした場合、panicが発生しないこと。
 // errが発生した場合Nackが呼ばれること。
@@ -97,12 +108,3 @@ func Test(t *testing.T) {
 // Interceptorがpanicした場合、panicが発生しないこと。
 // Gracefullyがtrueの場合、Publishが完了するまで待つこと。
 // Gracefullyがtrueの場合、SubscriberMethodが完了するまで待つこと。
-
-func TestXxxIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	// do something
-	ok := true
-	assert.True(t, ok)
-}
