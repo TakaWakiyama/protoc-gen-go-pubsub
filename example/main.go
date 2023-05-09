@@ -33,16 +33,6 @@ func main() {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	/*
-		acc := event.NewPubSubAccessor()
-			t, err := acc.CreateHelloWorldTopicIFNotExists(ctx, client)
-			fmt.Printf("t: %v\n", t)
-			fmt.Printf("err: %v\n", err)
-			s, e := acc.CreateHelloWorldSubscriptionIFNotExists(ctx, client)
-			fmt.Printf("s: %v\n", s)
-			fmt.Printf("e: %v\n", e)
-	*/
-
 	fun := os.Getenv("PFUNC")
 	if fun == "" {
 		subscribe(ctx, proj)
@@ -59,31 +49,33 @@ func subscribe(ctx context.Context, proj string) {
 	fmt.Println("Service Start")
 	s := service{}
 
-	interceptor := func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
-		fmt.Printf("start interceptor1 \ninfo: %+v\n", info)
-		err := handler(ctx, msg)
-		fmt.Println("end interceptor1")
-		return err
-	}
-	interceptor2 := func(ctx context.Context, msg interface{}, _ gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
-		fmt.Println("start interceptor2")
-		start := time.Now()
-		err := handler(ctx, msg)
-		fmt.Printf("end interceptor2: %v\n", time.Since(start))
-		return err
-	}
+	/*
+		interceptor := func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+			fmt.Printf("start interceptor1 \ninfo: %+v\n", info)
+			err := handler(ctx, msg)
+			fmt.Println("end interceptor1")
+			return err
+		}
+		interceptor2 := func(ctx context.Context, msg interface{}, _ gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+			fmt.Println("start interceptor2")
+			start := time.Now()
+			err := handler(ctx, msg)
+			fmt.Printf("end interceptor2: %v\n", time.Since(start))
+			return err
+		}
 
-	interceptor3 := func(ctx context.Context, msg interface{}, e gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
-		fmt.Printf("start interceptor3 \n messageID %v \n", e.GetMessage().ID)
-		err := handler(ctx, msg)
-		fmt.Printf("end interceptor3 \n messageID %v \n", e.GetMessage().ID)
-		return err
-	}
+		interceptor3 := func(ctx context.Context, msg interface{}, e gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+			fmt.Printf("start interceptor3 \n messageID %v \n", e.GetMessage().ID)
+			err := handler(ctx, msg)
+			fmt.Printf("end interceptor3 \n messageID %v \n", e.GetMessage().ID)
+			return err
+		}
+	*/
 	option := &event.SubscriberOption{
 		Interceptors: []gosub.SubscriberInterceptor{
-			interceptor,
-			interceptor2,
-			interceptor3,
+			// interceptor,
+			// interceptor2,
+			// interceptor3,
 		},
 	}
 
@@ -97,21 +89,17 @@ func subscribe(ctx context.Context, proj string) {
 func publish(ctx context.Context, client *pubsub.Client) {
 	c := event.NewHelloWorldServiceClient(client, nil)
 	msg := uuid.New().String()
-	eid, err := c.PublishHelloWorld(ctx, &event.HelloWorldEvent{
+	c.PublishHelloWorld(ctx, &event.HelloWorldEvent{
 		Name:          "Taka",
 		EventID:       msg,
 		UnixTimeStamp: time.Now().Unix(),
 	})
-	fmt.Printf("eid: %v\n", eid)
-	res, err := c.PublishHogeCreated(ctx, &event.HogeEvent{
+	c.PublishHogeCreated(ctx, &event.HogeEvent{
 		Message:       "Taka",
 		EventID:       msg,
 		UnixTimeStamp: time.Now().Unix(),
 	})
-	fmt.Printf("res: %v\n", res)
-	fmt.Printf("err: %v\n", err)
-
-	if 1 == 1 {
+	if true {
 		return
 	}
 	c.BatchPublishHogesCreated(ctx, []*event.HogeEvent{

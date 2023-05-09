@@ -22,22 +22,36 @@ services:
     ports:
       - 8085:8085
   publisher:
+    image: golang:1.19
     build:
       context: ..
-      dockerfile: ./example/Dockerfile
     environment:
       - PFUNC="p"
       - PUBSUB_EMULATOR_HOST=pubsub:8085
       - PROJECT_ID=emulator
+    volumes:
+      - .:/tmp
     depends_on:
       - pubsub
   subscriber:
+    image: golang:1.19
     build:
       context: ..
-      dockerfile: ./example/Dockerfile
     depends_on:
       - pubsub
       - redis
+    volumes:
+        - .:/tmp
+    environment:
+      - PUBSUB_EMULATOR_HOST=pubsub:8085
+      - PROJECT_ID=emulator
+  test:
+    image: golang:1.19
+    depends_on:
+      - pubsub
+      - redis
+    volumes:
+        - ../:/go/src
     environment:
       - PUBSUB_EMULATOR_HOST=pubsub:8085
       - PROJECT_ID=emulator
