@@ -21,8 +21,7 @@ func (s service) HelloWorld(ctx context.Context, req *event.HelloWorldEvent) err
 }
 
 func (s service) OnHoge(ctx context.Context, req *event.HogeEvent) error {
-	fmt.Printf("OnHoge Event req: %+v\n", req)
-	return nil
+	panic("implement me")
 }
 
 func main() {

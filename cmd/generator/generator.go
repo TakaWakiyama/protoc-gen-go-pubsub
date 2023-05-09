@@ -468,6 +468,11 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg.Nack()
+			}
+		}()
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "{_m.GoName}", msg)
 		var event {_m.Input}
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {

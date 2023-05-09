@@ -104,6 +104,11 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg.Nack()
+			}
+		}()
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "HelloWorld", msg)
 		var event HelloWorldEvent
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
@@ -143,6 +148,11 @@ func (is *innerHelloWorldSubscriberSubscriber) listenOnHoge(ctx context.Context)
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
+		defer func() {
+			if err := recover(); err != nil {
+				msg.Nack()
+			}
+		}()
 		info := gosub.NewSubscriberInfo(topicName, subscriptionName, sub, "OnHoge", msg)
 		var event HogeEvent
 		if err := proto.Unmarshal(msg.Data, &event); err != nil {
