@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -57,10 +58,9 @@ func setup() {
 	time.Sleep(300 * time.Millisecond)
 }
 
-// go test -timeout=30s
-
 // should settimeout
 func Test(t *testing.T) {
+	fmt.Printf("\"Test Start\": %v\n", "Test Start")
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
 	client, err := pubsub.NewClient(ctx, proj)
@@ -87,6 +87,7 @@ func Test(t *testing.T) {
 	// action
 	s := newsub(helloCalled, doNotghin)
 	go func() {
+		fmt.Printf("\"event.Run\": %v\n", "event.Run")
 		event.Run(s, client, nil)
 	}()
 	// assert

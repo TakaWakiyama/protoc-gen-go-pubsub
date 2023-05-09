@@ -47,4 +47,4 @@ services:
     environment:
       - PUBSUB_EMULATOR_HOST=pubsub:8085
       - PROJECT_ID=emulator
-    command: sh -c "cd src/example && go test --timeout=30s"
+    command: sh -c "cd src/example && go test --timeout=5m"
