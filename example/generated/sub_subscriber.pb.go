@@ -29,6 +29,11 @@ var defaultSubscriberOption = &SubscriberOption{
 	SubscribeGracefully: false,
 }
 
+var retryOpts = []retry.Option{
+	retry.Delay(1 * time.Second),
+	retry.Attempts(3),
+}
+
 type HelloWorldSubscriber interface {
 	// Hello world is super method
 	HelloWorld(ctx context.Context, req *HelloWorldEvent) error
@@ -47,12 +52,18 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	}
 	ctx := context.Background()
 	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
-	if err := is.listenHelloWorld(ctx); err != nil {
-		return err
-	}
+
+	go func() {
+		if err := is.listenHelloWorld(ctx); err != nil {
+			panic(err)
+		}
+	}()
+
+
 	if err := is.listenOnHoge(ctx); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -86,7 +97,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 		}
 		sub = tmp
 		return nil
-	}); err != nil {
+	}, retryOpts...); err != nil {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {
@@ -125,7 +136,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenOnHoge(ctx context.Context)
 		}
 		sub = tmp
 		return nil
-	}); err != nil {
+	}, retryOpts...); err != nil {
 		return err
 	}
 	callback := func(ctx context.Context, msg *pubsub.Message) {

@@ -15,11 +15,11 @@ generate_sample_subscriber:
 	--experimental_allow_proto3_optional \
 	--go_out=./example/generated \
 	--go_opt=paths=source_relative \
-	--go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example/option \
+	--go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	--go-pubsub_out=./example/generated \
 	--go-pubsub_opt=paths=source_relative \
 	--go-pubsub_opt=is_publisher=0 \
-	--go-pubsub_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example/option \
+	--go-pubsub_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	./example/proto/sub.proto
 
 generate_sample_publisher:
@@ -28,11 +28,11 @@ generate_sample_publisher:
 	--experimental_allow_proto3_optional \
 	--go_out=./example/generated \
 	--go_opt=paths=source_relative \
-	--go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example/option \
+	--go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	--go-pubsub_out=./example/generated \
 	--go-pubsub_opt=paths=source_relative \
 	--go-pubsub_opt=is_publisher=1 \
-	--go-pubsub_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example/option \
+	--go-pubsub_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	./example/proto/pub.proto
 
 generate_sample_option:

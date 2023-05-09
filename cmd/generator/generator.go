@@ -322,8 +322,12 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 			batchPublish = *opt.BatchPublish
 		}
 		if batchPublish {
-			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]*BatchPublishResult, error) {")
-			g.P("return c.batchPublish(", `"`, opt.Topic, `"`, ", req)")
+			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]BatchPublishResult, error) {")
+			g.P(`events := make([]protoreflect.ProtoMessage, len(req))
+			for i, r := range req {
+				events[i] = r
+			}`)
+			g.P("return c.batchPublish(", `"`, opt.Topic, `"`, ", events)")
 			g.P("}")
 		} else {
 			g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error) {")

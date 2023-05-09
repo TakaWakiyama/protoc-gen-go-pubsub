@@ -104,9 +104,6 @@ func publish(ctx context.Context, client *pubsub.Client) {
 		UnixTimeStamp: time.Now().Unix(),
 	})
 	fmt.Printf("eid: %v\n", eid)
-	if 1 == 1 {
-		return
-	}
 	res, err := c.PublishHogeCreated(ctx, &event.HogeEvent{
 		Message:       "Taka",
 		EventID:       msg,

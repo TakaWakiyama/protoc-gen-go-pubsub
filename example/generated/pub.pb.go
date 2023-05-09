@@ -270,6 +270,7 @@ func file_pub_proto_init() {
 	if File_pub_proto != nil {
 		return
 	}
+	file_option_proto_init()
 	if !protoimpl.UnsafeEnabled {
 		file_pub_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*HelloWorldEvent); i {
