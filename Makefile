@@ -1,6 +1,6 @@
 generate_option:
 	mkdir -p ./option
-	protoc --go_out=./option --go_opt=paths=source_relative  ./proto/option.proto
+	protoc --go_out=./option --go_opt=paths=source_relative --go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub  ./proto/option.proto
 	mkdir -p ./cmd/generator/option
 	mv ./option/proto/option.pb.go ./cmd/generator/option/option.pb.go
 	rm -rf ./option/proto
@@ -9,7 +9,7 @@ copy_option:
 	mkdir -p ./example/p
 	cp proto/option.proto ./example/proto/option.proto
 
-generate_sample_subscriber:
+generate_example_subscriber:
 	protoc \
 	-I ./example/proto \
 	--experimental_allow_proto3_optional \
@@ -22,7 +22,7 @@ generate_sample_subscriber:
 	--go-pubsub_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	./example/proto/sub.proto
 
-generate_sample_publisher:
+generate_example_publisher:
 	protoc \
 	-I ./example/proto \
 	--experimental_allow_proto3_optional \
@@ -35,15 +35,19 @@ generate_sample_publisher:
 	--go-pubsub_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	./example/proto/pub.proto
 
-generate_sample_option:
+generate_example_option:
 	protoc \
 	-I ./example/proto \
 	--experimental_allow_proto3_optional \
 	--go_out=./example/generated \
 	--go_opt=paths=source_relative \
+	--go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub/example \
 	./example/proto/option.proto
+
+
+generate_example: generate_example_subscriber generate_example_publisher generate_example_option
 
 install:
 	cd cmd/generator && go install
 
-phony: generate_option copy_option generate_sample_subscriber generate_sample_publisher generate_sample_option install
+phony: generate_option copy_option generate_example_subscriber generate_example_publisher generate_example_option install
