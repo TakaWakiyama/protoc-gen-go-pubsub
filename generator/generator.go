@@ -202,9 +202,9 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 			batchPublish = *opt.BatchPublish
 		}
 		if batchPublish {
-			g.P("BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]*BatchPublishResult, error)")
+			g.P("BatchPublish", m.GoName, "(ctx context.Context, req []*", g.QualifiedGoIdent(m.Input.GoIdent), ") ([]*BatchPublishResult, error)")
 		} else {
-			g.P("Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error)")
+			g.P("Publish", m.GoName, "(ctx context.Context, req *", g.QualifiedGoIdent(m.Input.GoIdent), ") (string, error)")
 		}
 	}
 	g.P("}")
@@ -322,7 +322,7 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 			batchPublish = *opt.BatchPublish
 		}
 		if batchPublish {
-			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", m.Input.GoIdent, ") ([]BatchPublishResult, error) {")
+			g.P("func (c *inner", svcName, "Client) BatchPublish", m.GoName, "(ctx context.Context, req []*", g.QualifiedGoIdent(m.Input.GoIdent), ") ([]BatchPublishResult, error) {")
 			g.P(`events := make([]protoreflect.ProtoMessage, len(req))
 			for i, r := range req {
 				events[i] = r
@@ -330,7 +330,7 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 			g.P("return c.batchPublish(", `"`, opt.Topic, `"`, ", events)")
 			g.P("}")
 		} else {
-			g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") (string, error) {")
+			g.P("func (c *inner", svcName, "Client) Publish", m.GoName, "(ctx context.Context, req *", g.QualifiedGoIdent(m.Input.GoIdent), ") (string, error) {")
 			g.P("return c.publish(", `"`, opt.Topic, `"`, ", req)")
 			g.P("}")
 		}
@@ -365,7 +365,7 @@ func (pg *pubsubGenerator) generateSubscriberInterface() {
 	pg.g.P("type ", svc.GoName, " interface {")
 	for _, m := range svc.Methods {
 		pg.g.P(m.Comments.Leading,
-			m.GoName, "(ctx context.Context, req *", m.Input.GoIdent, ") error ")
+			m.GoName, "(ctx context.Context, req *", pg.g.QualifiedGoIdent(m.Input.GoIdent), ") error ")
 	}
 	pg.g.P("}")
 }
@@ -502,7 +502,7 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 		opt, _ := getSubOption(m)
 		template := strings.Replace(template, "{_svcName}", pg.file.Services[0].GoName, -1)
 		template = strings.Replace(template, "{_m.GoName}", m.GoName, -1)
-		template = strings.Replace(template, "{_m.Input}", m.Input.GoIdent.GoName, -1)
+		template = strings.Replace(template, "{_m.Input}", pg.g.QualifiedGoIdent(m.Input.GoIdent), -1)
 		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
 		template = strings.Replace(template, "{_opt.Subscription}", opt.Subscription, -1)
 		pg.g.P(template)
