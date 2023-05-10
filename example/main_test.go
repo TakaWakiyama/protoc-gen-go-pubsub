@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"testing"
@@ -46,7 +47,7 @@ var doNotghing = func(ctx context.Context, req proto.Message) error {
 	return nil
 }
 
-func setup() {
+func clear() {
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
 	client, err := pubsub.NewClient(ctx, proj)
@@ -82,8 +83,39 @@ func setup() {
 	}
 }
 
+func fakeHelloWorldEvent() *event.HelloWorldEvent {
+	return &event.HelloWorldEvent{
+		Name:          uuid.NewString(),
+		EventID:       uuid.NewString(),
+		UnixTimeStamp: time.Now().Unix(),
+	}
+}
+
+func fakeHogeCreatedEvent() *event.HogeEvent {
+	return &event.HogeEvent{
+		Message:       uuid.NewString(),
+		EventID:       uuid.NewString(),
+		UnixTimeStamp: time.Now().Unix(),
+	}
+}
+
+func setTestTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	var cancel context.CancelFunc
+	ctx, cancel := context.WithTimeout(context.TODO(), d)
+	t.Cleanup(func() {
+		cancel()
+	})
+	go func() {
+		<-ctx.Done()
+		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
+			t.Error("test timeout")
+		}
+	}()
+}
+
 func TestMain(m *testing.M) {
-	setup()
+	clear()
 	code := m.Run()
 	os.Exit(code)
 }
@@ -111,11 +143,7 @@ func TestPusSubHelloWorld(t *testing.T) {
 		}
 	}()
 	time.Sleep(1 * time.Second)
-	want := &event.HelloWorldEvent{
-		Name:          uuid.NewString(),
-		EventID:       uuid.NewString(),
-		UnixTimeStamp: time.Now().Unix(),
-	}
+	want := fakeHelloWorldEvent()
 	if _, err := c.PublishHelloWorld(ctx, want); err != nil {
 		t.Fatalf("PublishHelloWorld error: %v", err)
 	}
@@ -145,43 +173,23 @@ func TestPusSubOnHoge(t *testing.T) {
 		{
 			name: "subscriber method is to be called after an event published. Data is to be passed to subscriber method.",
 			want: []*event.HogeEvent{
-				{
-					Message:       uuid.NewString(),
-					EventID:       uuid.NewString(),
-					UnixTimeStamp: time.Now().Unix(),
-				},
+				fakeHogeCreatedEvent(),
 			},
 			batchPublish: false,
 		},
 		{
 			name: "subscriber method is to be called after two events published for each. each Data are to be passed to subscriber method.",
 			want: []*event.HogeEvent{
-				{
-					Message:       uuid.NewString(),
-					EventID:       uuid.NewString(),
-					UnixTimeStamp: time.Now().Unix(),
-				},
-				{
-					Message:       uuid.NewString(),
-					EventID:       uuid.NewString(),
-					UnixTimeStamp: time.Now().Unix(),
-				},
+				fakeHogeCreatedEvent(),
+				fakeHogeCreatedEvent(),
 			},
 			batchPublish: false,
 		},
 		{
 			name: "subscriber method is to be called after two events published at once. Data are to be passed to subscriber method.",
 			want: []*event.HogeEvent{
-				{
-					Message:       uuid.NewString(),
-					EventID:       uuid.NewString(),
-					UnixTimeStamp: time.Now().Unix(),
-				},
-				{
-					Message:       uuid.NewString(),
-					EventID:       uuid.NewString(),
-					UnixTimeStamp: time.Now().Unix(),
-				},
+				fakeHogeCreatedEvent(),
+				fakeHogeCreatedEvent(),
 			},
 			batchPublish: true,
 		},
@@ -229,7 +237,7 @@ func TestPusSubOnHoge(t *testing.T) {
 			if diff := cmp.Diff(tc.want, actual, opts...); diff != "" {
 				t.Errorf("X value is mismatch (-num1 +num2):%s\n", diff)
 			}
-			setup()
+			clear()
 		})
 	}
 }
@@ -265,19 +273,11 @@ func TestSubscriberInterceptor(t *testing.T) {
 		{
 			name:  "subscriber method works when interceptor is nil.",
 			wanto: []int{},
-			want: &event.HelloWorldEvent{
-				Name:          uuid.NewString(),
-				EventID:       uuid.NewString(),
-				UnixTimeStamp: time.Now().Unix(),
-			},
+			want:  fakeHelloWorldEvent(),
 		},
 		{
-			name: "an interceptor is to be called.",
-			want: &event.HelloWorldEvent{
-				Name:          uuid.NewString(),
-				EventID:       uuid.NewString(),
-				UnixTimeStamp: time.Now().Unix(),
-			},
+			name:  "an interceptor is to be called.",
+			want:  fakeHelloWorldEvent(),
 			wanto: []int{1, 2},
 			interceptors: []gosub.SubscriberInterceptor{
 				func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
@@ -312,6 +312,10 @@ func TestSubscriberInterceptor(t *testing.T) {
 			},
 		},
 	}
+	t.Cleanup(func() {
+		reset()
+		clear()
+	})
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			resultChan := make(chan *event.HelloWorldEvent)
@@ -339,18 +343,118 @@ func TestSubscriberInterceptor(t *testing.T) {
 			if diff := cmp.Diff(tc.wanto, o); diff != "" {
 				t.Errorf("X value is mismatch (-num1 +num2):%s\n", diff)
 			}
-			reset()
-			setup()
 		})
 	}
 }
 
-// err if topic does not exist errになること
+func TestRunErrorIFTopicDoesnotExsits(t *testing.T) {
+	ctx := context.Background()
+	proj := os.Getenv("PROJECT_ID")
+	client, err := pubsub.NewClient(ctx, proj)
+	if err != nil {
+		log.Fatalf("Could not create pubsub Client: %v", err)
+	}
+	defer client.Close()
+	testCases := []struct {
+		name      string
+		topicName string
+	}{
+		{
+			name:      "helloworldtopic topic does not exist",
+			topicName: "helloworldtopic",
+		},
+		{
+			name:      "hogeCreated topic does not exist",
+			topicName: "hogeCreated",
+		},
+	}
+	setTestTimeout(t, 10*time.Second)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := client.Topic(tc.topicName).Delete(ctx); err != nil {
+				t.Fatalf("Delete error: %v", err)
+			}
+			s := newsub(doNotghing, doNotghing)
+			err = event.Run(s, client, nil)
+			if err == nil {
+				t.Errorf("Run error is nil")
+			}
+		})
+	}
+}
 
-// InterceptorMethodがpanicした場合、panicが発生しないこと。
-// SubscriberMethodがpanicした場合、panicが発生しないこと。
-
-// errが発生した場合Nackが呼ばれること。
-
-// Gracefullyがtrueの場合、Publishが完了するまで待つこと。
-// Gracefullyがtrueの場合、SubscriberMethodが完了するまで待つこと。
+// TestRunErrorIFSubscriberMethodPanic: recover and nack when subscriber method panics.
+// TODO: pubsub messageの nackを完全に検知するために ack or nackする構造体のIFを作成する必要がある。
+// Note: 2回呼ばれることでnackされることを確認している。
+func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
+	ctx := context.Background()
+	proj := os.Getenv("PROJECT_ID")
+	client, err := pubsub.NewClient(ctx, proj)
+	if err != nil {
+		log.Fatalf("Could not create pubsub Client: %v", err)
+	}
+	defer client.Close()
+	setTestTimeout(t, 30*time.Second)
+	ac := event.NewPubSubAccessor()
+	ac.CreateHelloWorldTopicIFNotExists(ctx, client)
+	ac.CreateHelloWorldSubscriptionIFNotExists(ctx, client)
+	ac.CreateOnHogeTopicIFNotExists(ctx, client)
+	ac.CreateOnHogeSubscriptionIFNotExists(ctx, client)
+	ch := make(chan struct{})
+	panicedOnce := false
+	t.Cleanup(func() {
+		clear()
+		panicedOnce = false
+	})
+	testCases := []struct {
+		name         string
+		interceptors []gosub.SubscriberInterceptor
+		callback     onCalledFunc
+	}{
+		{
+			name:         "subscriber method panic",
+			interceptors: nil,
+			callback: func(ctx context.Context, e proto.Message) error {
+				if panicedOnce {
+					ch <- struct{}{}
+					return nil
+				}
+				panicedOnce = true
+				panic("panic")
+			},
+		},
+		{
+			name: "subscriber method panic with interceptor",
+			interceptors: []gosub.SubscriberInterceptor{
+				func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+					ch <- struct{}{}
+					panic("panic")
+				},
+			},
+			callback: func(ctx context.Context, e proto.Message) error {
+				return nil
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := event.NewHelloWorldServiceClient(client, nil)
+			s := newsub(doNotghing, tc.callback)
+			opt := &event.SubscriberOption{
+				Interceptors: tc.interceptors,
+			}
+			go func() {
+				if e := event.Run(s, client, opt); e != nil {
+					t.Errorf("Run error: %v", e)
+				}
+			}()
+			if _, err := c.PublishHogeCreated(ctx, fakeHogeCreatedEvent()); err != nil {
+				t.Fatalf("PublishHogeCreated error: %v", err)
+			}
+			<-ch
+			if !panicedOnce {
+				t.Errorf("panic did not occur")
+			}
+		})
+	}
+}
