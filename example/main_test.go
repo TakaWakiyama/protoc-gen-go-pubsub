@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"os"
 	"testing"
@@ -17,8 +16,6 @@ import (
 
 	"cloud.google.com/go/pubsub"
 )
-
-// const defaultTimeout = 10 * time.Second
 
 // Note: mockgenを使ってテストコードを書くとcallbackの呼び出しが行われない現象に遭遇したので、自前で評価する構造体を作成した。
 type sub struct {
@@ -47,6 +44,37 @@ var doNotghing = func(ctx context.Context, req proto.Message) error {
 	return nil
 }
 
+func TestMain(m *testing.M) {
+	clear()
+	code := m.Run()
+	clear()
+	os.Exit(code)
+}
+
+func setup() {
+	ctx := context.Background()
+	proj := os.Getenv("PROJECT_ID")
+	client, err := pubsub.NewClient(ctx, proj)
+	if err != nil {
+		log.Fatalf("Could not create pubsub Client: %v", err)
+	}
+	defer client.Close()
+	acc := event.NewPubSubAccessor()
+	if _, err := acc.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
+		log.Fatalf("CreateHelloWorldTopicIFNotExists error: %v", err)
+	}
+	if _, err := acc.CreateOnHogeTopicIFNotExists(ctx, client); err != nil {
+		log.Fatalf("CreateHogeCreatedTopicIFNotExists error: %v", err)
+	}
+	if _, err := acc.CreateHelloWorldSubscriptionIFNotExists(ctx, client); err != nil {
+		log.Fatalf("CreateHelloWorldSubscriptionIFNotExists error: %v", err)
+	}
+	if _, err := acc.CreateOnHogeSubscriptionIFNotExists(ctx, client); err != nil {
+		log.Fatalf("CreateOnHogeSubscriptionIFNotExists error: %v", err)
+	}
+	time.Sleep(1 * time.Second)
+}
+
 func clear() {
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
@@ -56,8 +84,6 @@ func clear() {
 	}
 	defer client.Close()
 	// errorになっているメッセージを全てflushする
-	ht := client.Topic("helloworldtopic")
-	hct := client.Topic("hogeCreated")
 	reset := func(t *pubsub.Topic) {
 		if t == nil {
 			return
@@ -72,15 +98,9 @@ func clear() {
 			t.Delete(ctx)
 		}
 	}
-	reset(ht)
-	reset(hct)
-	acc := event.NewPubSubAccessor()
-	if _, err := acc.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
-		log.Fatalf("CreateHelloWorldTopicIFNotExists error: %v", err)
-	}
-	if _, err := acc.CreateOnHogeTopicIFNotExists(ctx, client); err != nil {
-		log.Fatalf("CreateHogeCreatedTopicIFNotExists error: %v", err)
-	}
+	reset(client.Topic("helloworldtopic"))
+	reset(client.Topic("hogeCreated"))
+	time.Sleep(1 * time.Second)
 }
 
 func fakeHelloWorldEvent() *event.HelloWorldEvent {
@@ -99,29 +119,10 @@ func fakeHogeCreatedEvent() *event.HogeEvent {
 	}
 }
 
-func setTestTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	var cancel context.CancelFunc
-	ctx, cancel := context.WithTimeout(context.TODO(), d)
-	t.Cleanup(func() {
-		cancel()
-	})
-	go func() {
-		<-ctx.Done()
-		if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
-			t.Error("test timeout")
-		}
-	}()
-}
-
-func TestMain(m *testing.M) {
-	clear()
-	code := m.Run()
-	os.Exit(code)
-}
-
 // TestPusSubHelloWorld: Subscriber method is to be called after publish. Data is to be passed to subscriber method.
 func TestPusSubHelloWorld(t *testing.T) {
+	setup()
+	defer clear()
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
 	client, err := pubsub.NewClient(ctx, proj)
@@ -139,7 +140,7 @@ func TestPusSubHelloWorld(t *testing.T) {
 	s := newsub(helloCalled, doNotghing)
 	go func() {
 		if err := event.Run(s, client, nil); err != nil {
-			panic(err)
+			t.Errorf("Run error: %v", err)
 		}
 	}()
 	time.Sleep(1 * time.Second)
@@ -196,10 +197,7 @@ func TestPusSubOnHoge(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ac := event.NewPubSubAccessor()
-			if _, err := ac.CreateOnHogeSubscriptionIFNotExists(ctx, client); err != nil {
-				t.Fatalf("CreateOnHogeSubscriptionIFNotExists error: %v", err)
-			}
+			setup()
 			resultChan := make(chan []*event.HogeEvent)
 			result := []*event.HogeEvent{}
 			onHogeCreated := func(ctx context.Context, e proto.Message) error {
@@ -312,12 +310,11 @@ func TestSubscriberInterceptor(t *testing.T) {
 			},
 		},
 	}
-	t.Cleanup(func() {
-		reset()
-		clear()
-	})
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setup()
+			defer clear()
+			defer reset()
 			resultChan := make(chan *event.HelloWorldEvent)
 			onHelloWorldCreated := func(ctx context.Context, e proto.Message) error {
 				resultChan <- e.(*event.HelloWorldEvent)
@@ -368,12 +365,9 @@ func TestRunErrorIFTopicDoesnotExsits(t *testing.T) {
 			topicName: "hogeCreated",
 		},
 	}
-	setTestTimeout(t, 10*time.Second)
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := client.Topic(tc.topicName).Delete(ctx); err != nil {
-				t.Fatalf("Delete error: %v", err)
-			}
+			client.Topic(tc.topicName).Delete(ctx)
 			s := newsub(doNotghing, doNotghing)
 			err = event.Run(s, client, nil)
 			if err == nil {
@@ -394,18 +388,8 @@ func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	setTestTimeout(t, 30*time.Second)
-	ac := event.NewPubSubAccessor()
-	ac.CreateHelloWorldTopicIFNotExists(ctx, client)
-	ac.CreateHelloWorldSubscriptionIFNotExists(ctx, client)
-	ac.CreateOnHogeTopicIFNotExists(ctx, client)
-	ac.CreateOnHogeSubscriptionIFNotExists(ctx, client)
 	ch := make(chan struct{})
 	panicedOnce := false
-	t.Cleanup(func() {
-		clear()
-		panicedOnce = false
-	})
 	testCases := []struct {
 		name         string
 		interceptors []gosub.SubscriberInterceptor
@@ -427,7 +411,11 @@ func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
 			name: "subscriber method panic with interceptor",
 			interceptors: []gosub.SubscriberInterceptor{
 				func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
-					ch <- struct{}{}
+					if panicedOnce {
+						ch <- struct{}{}
+						return nil
+					}
+					panicedOnce = true
 					panic("panic")
 				},
 			},
@@ -438,6 +426,8 @@ func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setup()
+			defer clear()
 			c := event.NewHelloWorldServiceClient(client, nil)
 			s := newsub(doNotghing, tc.callback)
 			opt := &event.SubscriberOption{
@@ -445,16 +435,18 @@ func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
 			}
 			go func() {
 				if e := event.Run(s, client, opt); e != nil {
-					t.Errorf("Run error: %v", e)
+					panic(e)
 				}
 			}()
+			time.Sleep(1 * time.Second)
 			if _, err := c.PublishHogeCreated(ctx, fakeHogeCreatedEvent()); err != nil {
 				t.Fatalf("PublishHogeCreated error: %v", err)
 			}
 			<-ch
 			if !panicedOnce {
-				t.Errorf("panic did not occur")
+				t.Fatal("panic did not occur")
 			}
+			panicedOnce = false
 		})
 	}
 }
