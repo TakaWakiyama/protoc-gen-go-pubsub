@@ -8,6 +8,7 @@ import (
 	"time"
 
 	event "github.com/TakaWakiyama/protoc-gen-go-pubsub/example/generated"
+	gosub "github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/uuid"
@@ -233,13 +234,123 @@ func TestPusSubOnHoge(t *testing.T) {
 	}
 }
 
+func TestSubscriberInterceptor(t *testing.T) {
+	ctx := context.Background()
+	proj := os.Getenv("PROJECT_ID")
+	client, err := pubsub.NewClient(ctx, proj)
+	if err != nil {
+		log.Fatalf("Could not create pubsub Client: %v", err)
+	}
+	defer client.Close()
+	c := event.NewHelloWorldServiceClient(client, nil)
+	ac := event.NewPubSubAccessor()
+	if _, err := ac.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
+		t.Fatalf("CreateOnHelloWorldSubscriptionIFNotExists error: %v", err)
+	}
+
+	o := []int{}
+	reset := func() {
+		o = []int{}
+	}
+	add := func(c int) {
+		o = append(o, c)
+	}
+
+	testCases := []struct {
+		name         string
+		want         *event.HelloWorldEvent
+		wanto        []int
+		interceptors []gosub.SubscriberInterceptor
+	}{
+		{
+			name:  "subscriber method works when interceptor is nil.",
+			wanto: []int{},
+			want: &event.HelloWorldEvent{
+				Name:          uuid.NewString(),
+				EventID:       uuid.NewString(),
+				UnixTimeStamp: time.Now().Unix(),
+			},
+		},
+		{
+			name: "an interceptor is to be called.",
+			want: &event.HelloWorldEvent{
+				Name:          uuid.NewString(),
+				EventID:       uuid.NewString(),
+				UnixTimeStamp: time.Now().Unix(),
+			},
+			wanto: []int{1, 2},
+			interceptors: []gosub.SubscriberInterceptor{
+				func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+					add(1)
+					res := handler(ctx, msg)
+					add(2)
+					return res
+				},
+			},
+		},
+		{
+			name: "interceptors are to be called in order.",
+			want: &event.HelloWorldEvent{
+				Name:          uuid.NewString(),
+				EventID:       uuid.NewString(),
+				UnixTimeStamp: time.Now().Unix(),
+			},
+			wanto: []int{1, 2, 3, 4},
+			interceptors: []gosub.SubscriberInterceptor{
+				func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+					add(1)
+					res := handler(ctx, msg)
+					add(4)
+					return res
+				},
+				func(ctx context.Context, msg interface{}, info gosub.SubscriberInfo, handler gosub.SubscriberHandler) error {
+					add(2)
+					res := handler(ctx, msg)
+					add(3)
+					return res
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			resultChan := make(chan *event.HelloWorldEvent)
+			onHelloWorldCreated := func(ctx context.Context, e proto.Message) error {
+				resultChan <- e.(*event.HelloWorldEvent)
+				return nil
+			}
+			// action
+			s := newsub(onHelloWorldCreated, doNotghing)
+			go func() {
+				opt := &event.SubscriberOption{
+					Interceptors: tc.interceptors,
+				}
+				event.Run(s, client, opt)
+			}()
+			time.Sleep(1 * time.Second)
+			if _, err := c.PublishHelloWorld(ctx, tc.want); err != nil {
+				t.Fatalf("PublishHelloWorld error: %v", err)
+			}
+			actual := <-resultChan
+			opt := cmpopts.IgnoreUnexported(event.HelloWorldEvent{})
+			if diff := cmp.Diff(tc.want, actual, opt); diff != "" {
+				t.Errorf("HelloWorldEvent value is mismatch (-actual +opt):%s\n", diff)
+			}
+			if diff := cmp.Diff(tc.wanto, o); diff != "" {
+				t.Errorf("X value is mismatch (-num1 +num2):%s\n", diff)
+			}
+			reset()
+			setup()
+		})
+	}
+}
+
 // err if topic does not exist errになること
-// BatchPublish後にSubscriberMethodが呼ばれていること。データが正しく引数にわたっていること。
+
+// InterceptorMethodがpanicした場合、panicが発生しないこと。
 // SubscriberMethodがpanicした場合、panicが発生しないこと。
+
 // errが発生した場合Nackが呼ばれること。
-// SubscriberMethodが完了した場合Ackが呼ばれること。
-// Interceptorが呼ばれていること。1つ
-// Interceptorが呼ばれていること。複数
-// Interceptorがpanicした場合、panicが発生しないこと。
+
 // Gracefullyがtrueの場合、Publishが完了するまで待つこと。
 // Gracefullyがtrueの場合、SubscriberMethodが完了するまで待つこと。
