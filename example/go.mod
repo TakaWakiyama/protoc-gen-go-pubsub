@@ -2,9 +2,9 @@ module github.com/TakaWakiyama/protoc-gen-go-pubsub/example
 
 go 1.19
 
-replace github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher => ../pkg/publisher
+replace github.com/TakaWakiyama/protoc-gen-go-pubsub/publisher => ../publisher
 
-replace github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber => ../pkg/subscriber
+replace github.com/TakaWakiyama/protoc-gen-go-pubsub/subscriber => ../subscriber
 
 require (
 	cloud.google.com/go/pubsub v1.30.1
