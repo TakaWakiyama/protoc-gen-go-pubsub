@@ -9,6 +9,13 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+      # protocコマンドをインストールするのに時間がかかるので、後発で対応する
+      # - name: delete file
+        # run: |
+          # cd example/generated && rm $(ls)
+      # - name: Generate
+        # run: |
+          # make generate_example
       - name: Test
         run: |
           cd example && docker-compose up -d pubsub && sleep 1 && docker-compose run --rm test
