@@ -48,6 +48,6 @@ generate_example_option:
 generate_example: generate_example_subscriber generate_example_publisher generate_example_option
 
 install:
-	cd cmd/generator && go install
+	cd generator && go install
 
 phony: generate_option copy_option generate_example_subscriber generate_example_publisher generate_example_option install
