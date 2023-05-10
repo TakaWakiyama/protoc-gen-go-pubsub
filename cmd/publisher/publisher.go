@@ -80,9 +80,9 @@ func (p *innerPublisher) BatchPublish(ctx context.Context, topic *pubsub.Topic, 
 	pid := p.start()
 	defer p.stop(pid)
 	var results = make([]*pubsub.PublishResult, len(msgs))
-	for _, msg := range msgs {
+	for i, msg := range msgs {
 		result := topic.Publish(ctx, msg)
-		results = append(results, result)
+		results[i] = result
 	}
 	out := make([]BatchPublishResult, len(msgs))
 	for i, result := range results {
