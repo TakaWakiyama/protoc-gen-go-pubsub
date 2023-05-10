@@ -176,7 +176,7 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 		Error error
 	}
 
-	// ClientOption is the option for HelloWorldServiceClient
+	// ClientOption is the option for publisher client
 	type ClientOption struct {
 		// Gracefully is the flag to stop publishing gracefully
 		Gracefully bool
@@ -229,7 +229,7 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 		}
 	}
 
-	func (c *innerHelloWorldServiceClient) getTopic(topicName string) (*pubsub.Topic, error) {
+	func (c *inner{{.Name}}Client) getTopic(topicName string) (*pubsub.Topic, error) {
 		if t, ok := c.nameToTopic[topicName]; ok {
 			return t, nil
 		}
@@ -241,7 +241,7 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 		return t, nil
 	}
 
-	func (c *innerHelloWorldServiceClient) getPublisher(topicName string) (gopub.Publisher, error) {
+	func (c *inner{{.Name}}Client) getPublisher(topicName string) (gopub.Publisher, error) {
 		if p, ok := c.nameToPublisher[topicName]; ok {
 			return p, nil
 		}
@@ -276,7 +276,7 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 		})
 	}
 
-	func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
+	func (c *inner{{.Name}}Client) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
 		ctx := context.Background()
 
 		t, err := c.getTopic(topic)
@@ -371,9 +371,9 @@ func (pg *pubsubGenerator) generateSubscriberInterface() {
 }
 
 func (pg *pubsubGenerator) generateSubscriberOption() {
-	pg.g.P(`// SubscriberOption is the option for HelloWorldSubscriber
+	pg.g.P(`// SubscriberOption is the option for subscriber.
 	type SubscriberOption struct {
-		// Interceptors is the slice of SubscriberInterceptor. call before and after HelloWorldSubscriber method. default is empty.
+		// Interceptors is the slice of SubscriberInterceptor. call before and after subscriber method. default is empty.
 		Interceptors []gosub.SubscriberInterceptor
 		// SubscribeGracefully is the flag to stop subscribing gracefully. default is false.
 		SubscribeGracefully bool
@@ -402,7 +402,7 @@ func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
 		if option == nil {
 			option = defaultSubscriberOption
 		}
-		is := newInner{_svcName}Subscriber(service, client, option)
+		is := newInner{_svcName}(service, client, option)
 		ctx, cancel := context.WithCancel(context.Background())
 		errChan := make(chan error)
 		%s
@@ -428,18 +428,18 @@ func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
 
 func (pg *pubsubGenerator) generateInnerSubscriber(svc *protogen.Service) {
 	template := `
-	type inner{_svc.Name}Subscriber struct {
-		service HelloWorldSubscriber
+	type inner{_svc.Name} struct {
+		service {_svc.Name}
 		client  *pubsub.Client
 		option  SubscriberOption
 		accessor PubSubAccessor
 	}
 
-	func newInner{_svc.Name}Subscriber(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) *innerHelloWorldSubscriberSubscriber {
+	func newInner{_svc.Name}(service {_svc.Name}, client *pubsub.Client, option *SubscriberOption) *inner{_svc.Name} {
 		if option == nil {
 			option = defaultSubscriberOption
 		}
-		return &inner{_svc.Name}Subscriber{
+		return &inner{_svc.Name}{
 			service: service,
 			client:  client,
 			option:  *option,
@@ -453,7 +453,7 @@ func (pg *pubsubGenerator) generateInnerSubscriber(svc *protogen.Service) {
 
 func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 
-	template := `func (is *inner{_svcName}Subscriber) listen{_m.GoName}(ctx context.Context) error {
+	template := `func (is *inner{_svcName}) listen{_m.GoName}(ctx context.Context) error {
 	subscriptionName := "{_opt.Subscription}"
 	topicName := "{_opt.Topic}"
 	var sub *pubsub.Subscription
@@ -511,7 +511,7 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 
 func (pg *pubsubGenerator) generatePubSubAccessorInterface(ms []*protogen.Method) {
 	template := `
-	// PubSubAccessor: accessor for HelloWorldPubSub
+	// PubSubAccessor: accessor
 	type PubSubAccessor interface {
 	%s
 	}

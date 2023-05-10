@@ -20,7 +20,7 @@ type BatchPublishResult struct {
 	Error error
 }
 
-// ClientOption is the option for HelloWorldServiceClient
+// ClientOption is the option for publisher client
 type ClientOption struct {
 	// Gracefully is the flag to stop publishing gracefully
 	Gracefully bool
@@ -36,24 +36,24 @@ var defaultClientOption = &ClientOption{
 	Delay:       1 * time.Second,
 }
 
-type HelloWorldServiceClient interface {
+type ExamplePublisherClient interface {
 	PublishHelloWorld(ctx context.Context, req *HelloWorldEvent) (string, error)
 	PublishHogeCreated(ctx context.Context, req *HogeEvent) (string, error)
 	PublishHogesCreated(ctx context.Context, req *HogeEvent) (string, error)
 }
 
-type innerHelloWorldServiceClient struct {
+type innerExamplePublisherClient struct {
 	client          *pubsub.Client
 	nameToTopic     map[string]*pubsub.Topic
 	nameToPublisher map[string]gopub.Publisher
 	option          ClientOption
 }
 
-func NewHelloWorldServiceClient(client *pubsub.Client, option *ClientOption) *innerHelloWorldServiceClient {
+func NewExamplePublisherClient(client *pubsub.Client, option *ClientOption) *innerExamplePublisherClient {
 	if option == nil {
 		option = defaultClientOption
 	}
-	return &innerHelloWorldServiceClient{
+	return &innerExamplePublisherClient{
 		client:          client,
 		nameToTopic:     make(map[string]*pubsub.Topic),
 		nameToPublisher: make(map[string]gopub.Publisher),
@@ -61,7 +61,7 @@ func NewHelloWorldServiceClient(client *pubsub.Client, option *ClientOption) *in
 	}
 }
 
-func (c *innerHelloWorldServiceClient) getTopic(topicName string) (*pubsub.Topic, error) {
+func (c *innerExamplePublisherClient) getTopic(topicName string) (*pubsub.Topic, error) {
 	if t, ok := c.nameToTopic[topicName]; ok {
 		return t, nil
 	}
@@ -73,7 +73,7 @@ func (c *innerHelloWorldServiceClient) getTopic(topicName string) (*pubsub.Topic
 	return t, nil
 }
 
-func (c *innerHelloWorldServiceClient) getPublisher(topicName string) (gopub.Publisher, error) {
+func (c *innerExamplePublisherClient) getPublisher(topicName string) (gopub.Publisher, error) {
 	if p, ok := c.nameToPublisher[topicName]; ok {
 		return p, nil
 	}
@@ -86,7 +86,7 @@ func (c *innerHelloWorldServiceClient) getPublisher(topicName string) (gopub.Pub
 	return p, nil
 }
 
-func (c *innerHelloWorldServiceClient) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
+func (c *innerExamplePublisherClient) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
 	ctx := context.Background()
 
 	t, err := c.getTopic(topic)
@@ -107,7 +107,7 @@ func (c *innerHelloWorldServiceClient) publish(topic string, event protoreflect.
 	})
 }
 
-func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
+func (c *innerExamplePublisherClient) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
 	ctx := context.Background()
 
 	t, err := c.getTopic(topic)
@@ -143,13 +143,13 @@ func (c *innerHelloWorldServiceClient) batchPublish(topic string, events []proto
 	return results, nil
 }
 
-func (c *innerHelloWorldServiceClient) PublishHelloWorld(ctx context.Context, req *HelloWorldEvent) (string, error) {
+func (c *innerExamplePublisherClient) PublishHelloWorld(ctx context.Context, req *HelloWorldEvent) (string, error) {
 	return c.publish("helloworldtopic", req)
 }
-func (c *innerHelloWorldServiceClient) PublishHogeCreated(ctx context.Context, req *HogeEvent) (string, error) {
+func (c *innerExamplePublisherClient) PublishHogeCreated(ctx context.Context, req *HogeEvent) (string, error) {
 	return c.publish("hogeCreated", req)
 }
-func (c *innerHelloWorldServiceClient) BatchPublishHogesCreated(ctx context.Context, req []*HogeEvent) ([]BatchPublishResult, error) {
+func (c *innerExamplePublisherClient) BatchPublishHogesCreated(ctx context.Context, req []*HogeEvent) ([]BatchPublishResult, error) {
 	events := make([]protoreflect.ProtoMessage, len(req))
 	for i, r := range req {
 		events[i] = r

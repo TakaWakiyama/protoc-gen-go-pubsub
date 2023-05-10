@@ -130,7 +130,7 @@ func TestPusSubHelloWorld(t *testing.T) {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	c := event.NewHelloWorldServiceClient(client, nil)
+	c := event.NewExamplePublisherClient(client, nil)
 	resultChan := make(chan *event.HelloWorldEvent)
 	helloCalled := func(ctx context.Context, e proto.Message) error {
 		resultChan <- e.(*event.HelloWorldEvent)
@@ -165,7 +165,7 @@ func TestPusSubOnHoge(t *testing.T) {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	c := event.NewHelloWorldServiceClient(client, nil)
+	c := event.NewExamplePublisherClient(client, nil)
 	testCases := []struct {
 		name         string
 		want         []*event.HogeEvent
@@ -248,7 +248,7 @@ func TestSubscriberInterceptor(t *testing.T) {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	c := event.NewHelloWorldServiceClient(client, nil)
+	c := event.NewExamplePublisherClient(client, nil)
 	ac := event.NewPubSubAccessor()
 	if _, err := ac.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
 		t.Fatalf("CreateOnHelloWorldSubscriptionIFNotExists error: %v", err)
@@ -428,7 +428,7 @@ func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			setup()
 			defer clear()
-			c := event.NewHelloWorldServiceClient(client, nil)
+			c := event.NewExamplePublisherClient(client, nil)
 			s := newsub(doNotghing, tc.callback)
 			opt := &event.SubscriberOption{
 				Interceptors: tc.interceptors,
