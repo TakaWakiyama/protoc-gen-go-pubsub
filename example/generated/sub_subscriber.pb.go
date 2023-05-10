@@ -16,9 +16,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// SubscriberOption is the option for HelloWorldSubscriber
+// SubscriberOption is the option for subscriber.
 type SubscriberOption struct {
-	// Interceptors is the slice of SubscriberInterceptor. call before and after HelloWorldSubscriber method. default is empty.
+	// Interceptors is the slice of SubscriberInterceptor. call before and after subscriber method. default is empty.
 	Interceptors []gosub.SubscriberInterceptor
 	// SubscribeGracefully is the flag to stop subscribing gracefully. default is false.
 	SubscribeGracefully bool
@@ -34,13 +34,13 @@ var retryOpts = []retry.Option{
 	retry.Attempts(3),
 }
 
-type HelloWorldSubscriber interface {
+type ExampleSubscriber interface {
 	// Hello world is super method
 	HelloWorld(ctx context.Context, req *HelloWorldEvent) error
 	OnHoge(ctx context.Context, req *HogeEvent) error
 }
 
-func Run(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) error {
+func Run(service ExampleSubscriber, client *pubsub.Client, option *SubscriberOption) error {
 	if service == nil {
 		return fmt.Errorf("service is nil")
 	}
@@ -50,7 +50,7 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	if option == nil {
 		option = defaultSubscriberOption
 	}
-	is := newInnerHelloWorldSubscriberSubscriber(service, client, option)
+	is := newInnerExampleSubscriber(service, client, option)
 	ctx, cancel := context.WithCancel(context.Background())
 	errChan := make(chan error)
 
@@ -70,18 +70,18 @@ func Run(service HelloWorldSubscriber, client *pubsub.Client, option *Subscriber
 	return err
 }
 
-type innerHelloWorldSubscriberSubscriber struct {
-	service  HelloWorldSubscriber
+type innerExampleSubscriber struct {
+	service  ExampleSubscriber
 	client   *pubsub.Client
 	option   SubscriberOption
 	accessor PubSubAccessor
 }
 
-func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client *pubsub.Client, option *SubscriberOption) *innerHelloWorldSubscriberSubscriber {
+func newInnerExampleSubscriber(service ExampleSubscriber, client *pubsub.Client, option *SubscriberOption) *innerExampleSubscriber {
 	if option == nil {
 		option = defaultSubscriberOption
 	}
-	return &innerHelloWorldSubscriberSubscriber{
+	return &innerExampleSubscriber{
 		service:  service,
 		client:   client,
 		option:   *option,
@@ -89,7 +89,7 @@ func newInnerHelloWorldSubscriberSubscriber(service HelloWorldSubscriber, client
 	}
 }
 
-func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Context) error {
+func (is *innerExampleSubscriber) listenHelloWorld(ctx context.Context) error {
 	subscriptionName := "helloworldsubscription"
 	topicName := "helloworldtopic"
 	var sub *pubsub.Subscription
@@ -133,7 +133,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenHelloWorld(ctx context.Cont
 	return nil
 }
 
-func (is *innerHelloWorldSubscriberSubscriber) listenOnHoge(ctx context.Context) error {
+func (is *innerExampleSubscriber) listenOnHoge(ctx context.Context) error {
 	subscriptionName := "onHogeCreated"
 	topicName := "hogeCreated"
 	var sub *pubsub.Subscription
@@ -177,7 +177,7 @@ func (is *innerHelloWorldSubscriberSubscriber) listenOnHoge(ctx context.Context)
 	return nil
 }
 
-// PubSubAccessor: accessor for HelloWorldPubSub
+// PubSubAccessor: accessor
 type PubSubAccessor interface {
 	CreateHelloWorldTopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error)
 	CreateHelloWorldSubscriptionIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error)

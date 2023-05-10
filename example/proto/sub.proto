@@ -5,7 +5,7 @@ option go_package = "github.com/TakaWakiyama/protoc-gen-go-pubsub/example";
 import "option.proto";
 import "pub.proto";
 
-service  HelloWorldSubscriber {
+service  ExampleSubscriber {
     /* Hello world is super method */
     rpc HelloWorld(HelloWorldEvent) returns (Empty) {
         option (option.subOption) = {

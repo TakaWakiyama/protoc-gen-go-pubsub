@@ -19,7 +19,7 @@ message HogeEvent {
 
 message Empty {}
 
-service  HelloWorldService {
+service  ExamplePublisher {
     rpc HelloWorld(HelloWorldEvent) returns (Empty) {
         option (option.pubOption) = {
 			topic: "helloworldtopic"
