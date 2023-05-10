@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -18,12 +17,7 @@ import (
 
 // const defaultTimeout = 10 * time.Second
 
-type onCalledFunc = func(ctx context.Context, req proto.Message) error
-
-var doNotghin = func(ctx context.Context, req proto.Message) error {
-	return nil
-}
-
+// mockgen -source=main.go -destination=mocks/mock_pubsub.go -package=mocks
 type sub struct {
 	onCalledHello onCalledFunc
 	onCalledHoge  onCalledFunc
@@ -44,6 +38,12 @@ func newsub(cbh onCalledFunc, cnh onCalledFunc) sub {
 	}
 }
 
+type onCalledFunc = func(ctx context.Context, req proto.Message) error
+
+var doNotghin = func(ctx context.Context, req proto.Message) error {
+	return nil
+}
+
 func setup() {
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
@@ -51,16 +51,43 @@ func setup() {
 	if err != nil {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
+	defer client.Close()
 	// errorになっているメッセージを全てflushする
-	go func() {
-		event.Run(service{}, client, nil)
-	}()
-	time.Sleep(300 * time.Millisecond)
+	ht := client.Topic("helloworldtopic")
+	hct := client.Topic("hogeCreated")
+	reset := func(t *pubsub.Topic) {
+		if t == nil {
+			return
+		}
+		itr := t.Subscriptions(ctx)
+		for {
+			sub, err := itr.Next()
+			if err != nil {
+				break
+			}
+			sub.Delete(ctx)
+			t.Delete(ctx)
+		}
+	}
+	reset(ht)
+	reset(hct)
+	acc := event.NewPubSubAccessor()
+	if _, err := acc.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
+		log.Fatalf("CreateHelloWorldTopicIFNotExists error: %v", err)
+	}
+	if _, err := acc.CreateOnHogeTopicIFNotExists(ctx, client); err != nil {
+		log.Fatalf("CreateHogeCreatedTopicIFNotExists error: %v", err)
+	}
+}
+
+func TestMain(m *testing.M) {
+	setup()
+	code := m.Run()
+	os.Exit(code)
 }
 
 // should settimeout
 func Test(t *testing.T) {
-	fmt.Printf("\"Test Start\": %v\n", "Test Start")
 	ctx := context.Background()
 	proj := os.Getenv("PROJECT_ID")
 	client, err := pubsub.NewClient(ctx, proj)
@@ -69,16 +96,6 @@ func Test(t *testing.T) {
 	}
 	defer client.Close()
 	c := event.NewHelloWorldServiceClient(client, nil)
-	acc := event.NewPubSubAccessor()
-	acc.CreateHelloWorldTopicIFNotExists(ctx, client)
-
-	want := &event.HelloWorldEvent{
-		Name:          "a",
-		EventID:       "1234",
-		UnixTimeStamp: time.Now().Unix(),
-	}
-	c.PublishHelloWorld(ctx, want)
-
 	resultChan := make(chan *event.HelloWorldEvent)
 	helloCalled := func(ctx context.Context, e proto.Message) error {
 		resultChan <- e.(*event.HelloWorldEvent)
@@ -87,9 +104,19 @@ func Test(t *testing.T) {
 	// action
 	s := newsub(helloCalled, doNotghin)
 	go func() {
-		fmt.Printf("\"event.Run\": %v\n", "event.Run")
-		event.Run(s, client, nil)
+		if err := event.Run(s, client, nil); err != nil {
+			panic(err)
+		}
 	}()
+	time.Sleep(1 * time.Second)
+	want := &event.HelloWorldEvent{
+		Name:          "a",
+		EventID:       "1234",
+		UnixTimeStamp: time.Now().Unix(),
+	}
+	if _, err := c.PublishHelloWorld(ctx, want); err != nil {
+		t.Fatalf("PublishHelloWorld error: %v", err)
+	}
 	// assert
 	actual := <-resultChan
 	opt := cmpopts.IgnoreUnexported(event.HelloWorldEvent{})
