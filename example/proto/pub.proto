@@ -37,3 +37,22 @@ service  ExamplePublisher {
         };
     }
 }
+
+service  ExamplePublisher2 {
+    rpc HelloWorld2(HelloWorldEvent) returns (Empty) {
+        option (option.pubOption) = {
+			topic: "helloworldtopic"
+		};
+    }
+    rpc HogeCreated2(HogeEvent) returns (Empty) {
+        option (option.pubOption) = {
+            topic: "hogeCreated"
+        };
+    }
+    rpc HogesCreated2(HogeEvent) returns (Empty) {
+        option (option.pubOption) = {
+            topic: "hogeCreated"
+            batchPublish: true
+        };
+    }
+}
