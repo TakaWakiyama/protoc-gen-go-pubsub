@@ -77,7 +77,7 @@ func subscribe(ctx context.Context, proj string) {
 		},
 	}
 
-	if err := event.Run(s, client, option); err != nil {
+	if err := event.RunExampleSubscriber(s, client, option); err != nil {
 		fmt.Printf("err: %v\n", err)
 	} else {
 		fmt.Println("Service End")

@@ -342,26 +342,24 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	if len(pg.file.Services) == 0 {
 		return pg.g
 	}
-
 	g := pg.g
 	pg.decrearePackageName()
 	genLeadingComments(g, pg.file.Desc.SourceLocations().ByPath(protoreflect.SourcePath{fileDescriptorProtoSyntaxFieldNumber}))
 	pg.generateSubscriberOption()
-	pg.generateSubscriberInterface()
-	// Note: 複数サービスのユースケースを確認する
-	svc := pg.file.Services[0]
-	pg.generateEntryPoint(svc)
-	pg.generateInnerSubscriber(svc)
-	pg.generateEachSubscribeFunction()
-	ms := pg.file.Services[0].Methods
-	pg.generatePubSubAccessorInterface(ms)
-	pg.generatePubSubAccessorImpl(ms)
+	for _, svc := range pg.file.Services {
+		pg.generateSubscriberInterface(svc)
+		// Note: 複数サービスのユースケースを確認する
+		pg.generateEntryPoint(svc)
+		pg.generateInnerSubscriber(svc)
+		pg.generateEachSubscribeFunction(svc)
+		pg.generatePubSubAccessorInterface(svc)
+		pg.generatePubSubAccessorImpl(svc)
+	}
 
 	return g
 }
 
-func (pg *pubsubGenerator) generateSubscriberInterface() {
-	svc := pg.file.Services[0]
+func (pg *pubsubGenerator) generateSubscriberInterface(svc *protogen.Service) {
 	pg.g.P("type ", svc.GoName, " interface {")
 	for _, m := range svc.Methods {
 		pg.g.P(m.Comments.Leading,
@@ -392,7 +390,7 @@ func (pg *pubsubGenerator) generateSubscriberOption() {
 }
 
 func (pg *pubsubGenerator) generateEntryPoint(svc *protogen.Service) {
-	template := `func Run(service {_svcName}, client *pubsub.Client, option *SubscriberOption) error {
+	template := `func Run{_svcName}(service {_svcName}, client *pubsub.Client, option *SubscriberOption) error {
 		if service == nil {
 			return fmt.Errorf("service is nil")
 		}
@@ -432,7 +430,7 @@ func (pg *pubsubGenerator) generateInnerSubscriber(svc *protogen.Service) {
 		service {_svc.Name}
 		client  *pubsub.Client
 		option  SubscriberOption
-		accessor PubSubAccessor
+		accessor {_svc.Name}PubSubAccessor
 	}
 
 	func newInner{_svc.Name}(service {_svc.Name}, client *pubsub.Client, option *SubscriberOption) *inner{_svc.Name} {
@@ -443,7 +441,7 @@ func (pg *pubsubGenerator) generateInnerSubscriber(svc *protogen.Service) {
 			service: service,
 			client:  client,
 			option:  *option,
-			accessor: NewPubSubAccessor(),
+			accessor: New{_svc.Name}PubSubAccessor(),
 		}
 	}
 	`
@@ -451,7 +449,7 @@ func (pg *pubsubGenerator) generateInnerSubscriber(svc *protogen.Service) {
 	pg.g.P(template)
 }
 
-func (pg *pubsubGenerator) generateEachSubscribeFunction() {
+func (pg *pubsubGenerator) generateEachSubscribeFunction(svc *protogen.Service) {
 
 	template := `func (is *inner{_svcName}) listen{_m.GoName}(ctx context.Context) error {
 	subscriptionName := "{_opt.Subscription}"
@@ -498,9 +496,9 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 }
 	`
 
-	for _, m := range pg.file.Services[0].Methods {
+	for _, m := range svc.Methods {
 		opt, _ := getSubOption(m)
-		template := strings.Replace(template, "{_svcName}", pg.file.Services[0].GoName, -1)
+		template := strings.Replace(template, "{_svcName}", svc.GoName, -1)
 		template = strings.Replace(template, "{_m.GoName}", m.GoName, -1)
 		template = strings.Replace(template, "{_m.Input}", pg.g.QualifiedGoIdent(m.Input.GoIdent), -1)
 		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
@@ -509,15 +507,16 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction() {
 	}
 }
 
-func (pg *pubsubGenerator) generatePubSubAccessorInterface(ms []*protogen.Method) {
+func (pg *pubsubGenerator) generatePubSubAccessorInterface(svc *protogen.Service) {
 	template := `
-	// PubSubAccessor: accessor
-	type PubSubAccessor interface {
+	// {svc.name}PubSubAccessor: Interface for create topic and subscription
+	type {svc.name}PubSubAccessor interface {
 	%s
 	}
 	`
-	fs := make([]string, 0, len(ms))
-	for _, m := range ms {
+	template = strings.Replace(template, "{svc.name}", svc.GoName, -1)
+	fs := make([]string, 0, len(svc.Methods))
+	for _, m := range svc.Methods {
 		f := `
 		Create{_m.GoName}TopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error)
 		Create{_m.GoName}SubscriptionIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error)`
@@ -529,19 +528,20 @@ func (pg *pubsubGenerator) generatePubSubAccessorInterface(ms []*protogen.Method
 	pg.g.P(out)
 }
 
-func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
-	fixed := `
-	type pubSubAccessorImpl struct{}
+func (pg *pubsubGenerator) generatePubSubAccessorImpl(svc *protogen.Service) {
+	impl := `
+	type inner{_svc.Name}PubSubAccessor struct{}
 
-	func NewPubSubAccessor() PubSubAccessor {
-		return &pubSubAccessorImpl{}
+	func New{_svc.Name}PubSubAccessor() {_svc.Name}PubSubAccessor {
+		return &inner{_svc.Name}PubSubAccessor{}
 	}`
-	pg.g.P(fixed)
+	impl = strings.Replace(impl, "{_svc.Name}", svc.GoName, -1)
+	pg.g.P(impl)
 
-	for _, m := range ms {
+	for _, m := range svc.Methods {
 		opt, _ := getSubOption(m)
 		template := `
-		func (c *pubSubAccessorImpl) Create{_m.GoName}TopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
+		func (c *inner{_svc.Name}PubSubAccessor) Create{_m.GoName}TopicIFNotExists(ctx context.Context, client *pubsub.Client) (*pubsub.Topic, error) {
 			topicName := "{_opt.Topic}"
 			t := client.Topic(topicName)
 			exsits, err := t.Exists(ctx)
@@ -554,7 +554,7 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 			return t, nil
 		}
 
-		func (c *pubSubAccessorImpl) Create{_m.GoName}SubscriptionIFNotExists(
+		func (c *inner{_svc.Name}PubSubAccessor) Create{_m.GoName}SubscriptionIFNotExists(
 			ctx context.Context,
 			client *pubsub.Client,
 		) (*pubsub.Subscription, error) {
@@ -578,6 +578,8 @@ func (pg *pubsubGenerator) generatePubSubAccessorImpl(ms []*protogen.Method) {
 			}
 			return sub, nil
 		}`
+
+		template = strings.Replace(template, "{_svc.Name}", svc.GoName, -1)
 		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
 		template = strings.Replace(template, "{_opt.Subscription}", opt.Subscription, -1)
 		template = strings.Replace(template, "{_m.GoName}", m.GoName, -1)

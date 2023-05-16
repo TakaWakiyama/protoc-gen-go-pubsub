@@ -59,7 +59,7 @@ func setup() {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
 	defer client.Close()
-	acc := event.NewPubSubAccessor()
+	acc := event.NewExampleSubscriberPubSubAccessor()
 	if _, err := acc.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
 		log.Fatalf("CreateHelloWorldTopicIFNotExists error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestPusSubHelloWorld(t *testing.T) {
 	// action
 	s := newsub(helloCalled, doNotghing)
 	go func() {
-		if err := event.Run(s, client, nil); err != nil {
+		if err := event.RunExampleSubscriber(s, client, nil); err != nil {
 			t.Errorf("Run error: %v", err)
 		}
 	}()
@@ -210,7 +210,7 @@ func TestPusSubOnHoge(t *testing.T) {
 			// action
 			s := newsub(doNotghing, onHogeCreated)
 			go func() {
-				event.Run(s, client, nil)
+				event.RunExampleSubscriber(s, client, nil)
 			}()
 			time.Sleep(1 * time.Second)
 			if tc.batchPublish {
@@ -249,7 +249,7 @@ func TestSubscriberInterceptor(t *testing.T) {
 	}
 	defer client.Close()
 	c := event.NewExamplePublisherClient(client, nil)
-	ac := event.NewPubSubAccessor()
+	ac := event.NewExampleSubscriberPubSubAccessor()
 	if _, err := ac.CreateHelloWorldTopicIFNotExists(ctx, client); err != nil {
 		t.Fatalf("CreateOnHelloWorldSubscriptionIFNotExists error: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestSubscriberInterceptor(t *testing.T) {
 				opt := &event.SubscriberOption{
 					Interceptors: tc.interceptors,
 				}
-				event.Run(s, client, opt)
+				event.RunExampleSubscriber(s, client, opt)
 			}()
 			time.Sleep(1 * time.Second)
 			if _, err := c.PublishHelloWorld(ctx, tc.want); err != nil {
@@ -369,7 +369,7 @@ func TestRunErrorIFTopicDoesnotExsits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			client.Topic(tc.topicName).Delete(ctx)
 			s := newsub(doNotghing, doNotghing)
-			err = event.Run(s, client, nil)
+			err = event.RunExampleSubscriber(s, client, nil)
 			if err == nil {
 				t.Errorf("Run error is nil")
 			}
@@ -434,7 +434,7 @@ func TestRunErrorIFSubscriberMethodPanic(t *testing.T) {
 				Interceptors: tc.interceptors,
 			}
 			go func() {
-				if e := event.Run(s, client, opt); e != nil {
+				if e := event.RunExampleSubscriber(s, client, opt); e != nil {
 					panic(e)
 				}
 			}()
