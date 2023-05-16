@@ -156,3 +156,124 @@ func (c *innerExamplePublisherClient) BatchPublishHogesCreated(ctx context.Conte
 	}
 	return c.batchPublish("hogeCreated", events)
 }
+
+type ExamplePublisher2Client interface {
+	PublishHelloWorld2(ctx context.Context, req *HelloWorldEvent) (string, error)
+	PublishHogeCreated2(ctx context.Context, req *HogeEvent) (string, error)
+	PublishHogesCreated2(ctx context.Context, req *HogeEvent) (string, error)
+}
+
+type innerExamplePublisher2Client struct {
+	client          *pubsub.Client
+	nameToTopic     map[string]*pubsub.Topic
+	nameToPublisher map[string]gopub.Publisher
+	option          ClientOption
+}
+
+func NewExamplePublisher2Client(client *pubsub.Client, option *ClientOption) *innerExamplePublisher2Client {
+	if option == nil {
+		option = defaultClientOption
+	}
+	return &innerExamplePublisher2Client{
+		client:          client,
+		nameToTopic:     make(map[string]*pubsub.Topic),
+		nameToPublisher: make(map[string]gopub.Publisher),
+		option:          *option,
+	}
+}
+
+func (c *innerExamplePublisher2Client) getTopic(topicName string) (*pubsub.Topic, error) {
+	if t, ok := c.nameToTopic[topicName]; ok {
+		return t, nil
+	}
+	t, err := gopub.GetOrCreateTopicIfNotExists(c.client, topicName)
+	if err != nil {
+		return nil, err
+	}
+	c.nameToTopic[topicName] = t
+	return t, nil
+}
+
+func (c *innerExamplePublisher2Client) getPublisher(topicName string) (gopub.Publisher, error) {
+	if p, ok := c.nameToPublisher[topicName]; ok {
+		return p, nil
+	}
+	p := gopub.NewPublisher(c.client, &gopub.PublisherOption{
+		Gracefully:  c.option.Gracefully,
+		MaxAttempts: uint(c.option.MaxAttempts),
+		Delay:       c.option.Delay,
+	})
+	c.nameToPublisher[topicName] = p
+	return p, nil
+}
+
+func (c *innerExamplePublisher2Client) publish(topic string, event protoreflect.ProtoMessage) (string, error) {
+	ctx := context.Background()
+
+	t, err := c.getTopic(topic)
+	if err != nil {
+		return "", err
+	}
+	p, err := c.getPublisher(topic)
+	if err != nil {
+		return "", err
+	}
+
+	ev, err := proto.Marshal(event)
+	if err != nil {
+		return "", err
+	}
+	return p.Publish(ctx, t, &pubsub.Message{
+		Data: ev,
+	})
+}
+
+func (c *innerExamplePublisher2Client) batchPublish(topic string, events []protoreflect.ProtoMessage) ([]BatchPublishResult, error) {
+	ctx := context.Background()
+
+	t, err := c.getTopic(topic)
+	if err != nil {
+		return nil, err
+	}
+	p, err := c.getPublisher(topic)
+	if err != nil {
+		return nil, err
+	}
+
+	var msgs []*pubsub.Message
+	for _, e := range events {
+		ev, err := proto.Marshal(e)
+		if err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, &pubsub.Message{
+			Data: ev,
+		})
+	}
+	res, err := p.BatchPublish(ctx, t, msgs)
+	if err != nil {
+		return nil, err
+	}
+	var results []BatchPublishResult
+	for _, r := range res {
+		results = append(results, BatchPublishResult{
+			ID:    r.ID,
+			Error: r.Error,
+		})
+	}
+	return results, nil
+}
+
+func (c *innerExamplePublisher2Client) PublishHelloWorld2(ctx context.Context, req *HelloWorldEvent) (string, error) {
+	return c.publish("helloworldtopic", req)
+}
+func (c *innerExamplePublisher2Client) PublishHogeCreated2(ctx context.Context, req *HogeEvent) (string, error) {
+	return c.publish("hogeCreated", req)
+}
+func (c *innerExamplePublisher2Client) BatchPublishHogesCreated2(ctx context.Context, req []*HogeEvent) ([]BatchPublishResult, error) {
+	events := make([]protoreflect.ProtoMessage, len(req))
+	for i, r := range req {
+		events[i] = r
+	}
+	return c.batchPublish("hogeCreated", events)
+}

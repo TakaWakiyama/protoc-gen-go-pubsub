@@ -159,17 +159,14 @@ func (pg *pubsubGenerator) generatePublisherFile() *protogen.GeneratedFile {
 	}
 	g := pg.g
 	pg.decrearePackageName()
-	//
-	svc := pg.file.Services[0]
-
-	svcName := svc.GoName
-	pg.genClientCode(svcName, svc.Methods, g)
+	pg.generatePublisherOption()
+	for _, svc := range pg.file.Services {
+		pg.genClientCode(svc.GoName, svc.Methods, g)
+	}
 	return g
 }
 
-// Client Code生成
-func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Method, g *protogen.GeneratedFile) {
-
+func (pg *pubsubGenerator) generatePublisherOption() {
 	optionDec := `
 	type BatchPublishResult struct {
 		ID    string
@@ -192,7 +189,12 @@ func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Met
 		Delay:       1 * time.Second,
 	}
 	`
-	g.P(optionDec)
+	pg.g.P(optionDec)
+
+}
+
+// Client Code生成
+func (pg *pubsubGenerator) genClientCode(svcName string, methods []*protogen.Method, g *protogen.GeneratedFile) {
 
 	g.P("type ", svcName, "Client interface {")
 	for _, m := range methods {
@@ -348,7 +350,6 @@ func (pg *pubsubGenerator) generateSubscriberFile() *protogen.GeneratedFile {
 	pg.generateSubscriberOption()
 	for _, svc := range pg.file.Services {
 		pg.generateSubscriberInterface(svc)
-		// Note: 複数サービスのユースケースを確認する
 		pg.generateEntryPoint(svc)
 		pg.generateInnerSubscriber(svc)
 		pg.generateEachSubscribeFunction(svc)
