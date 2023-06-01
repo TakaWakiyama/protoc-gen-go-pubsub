@@ -380,7 +380,7 @@ func (pg *pubsubGenerator) generateSubscriberOption() {
 
 	var defaultSubscriberOption = &SubscriberOption{
 		Interceptors:        []gosub.SubscriberInterceptor{},
-		SubscribeGracefully: false,
+		SubscribeGracefully: true,
 	}
 
 	var retryOpts = []retry.Option{
