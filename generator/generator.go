@@ -3,9 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
-	"github.com/TakaWakiyama/protoc-gen-go-pubsub/option"
+	option "github.com/TakaWakiyama/protoc-gen-go-pubsub/option"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -466,6 +467,13 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction(svc *protogen.Service) 
 	}, retryOpts...); err != nil {
 		return err
 	}
+
+	// Note: you can see ReceiveSettings https://github.com/googleapis/google-cloud-go/blob/pubsub/v1.31.0/pubsub/subscription.go#L720
+	// Note: you can see default value  https://github.com/googleapis/google-cloud-go/blob/main/pubsub/subscription.go#L743
+	sub.ReceiveSettings.Synchronous = {_opt.Synchronous}
+	sub.ReceiveSettings.NumGoroutines = {_opt.NumGoroutines}
+	sub.ReceiveSettings.MaxOutstandingMessages = {_opt.MaxOutstandingMessages}
+
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -504,6 +512,22 @@ func (pg *pubsubGenerator) generateEachSubscribeFunction(svc *protogen.Service) 
 		template = strings.Replace(template, "{_m.Input}", pg.g.QualifiedGoIdent(m.Input.GoIdent), -1)
 		template = strings.Replace(template, "{_opt.Topic}", opt.Topic, -1)
 		template = strings.Replace(template, "{_opt.Subscription}", opt.Subscription, -1)
+		synchronous := false
+		if opt.Synchronous != nil {
+			synchronous = *opt.Synchronous
+		}
+		var numGoroutines int32 = 10
+		if opt.NumGoroutines != nil {
+			numGoroutines = *opt.NumGoroutines
+		}
+		var maxOutstandingMessages int32 = 1000
+		if opt.MaxOutstandingMessages != nil {
+			maxOutstandingMessages = *opt.MaxOutstandingMessages
+		}
+		template = strings.Replace(template, "{_opt.Synchronous}", strconv.FormatBool(synchronous), -1)
+		template = strings.Replace(template, "{_opt.NumGoroutines}", strconv.FormatInt(int64(numGoroutines), 10), -1)
+		template = strings.Replace(template, "{_opt.MaxOutstandingMessages}", strconv.FormatInt(int64(maxOutstandingMessages), 10), -1)
+
 		pg.g.P(template)
 	}
 }
