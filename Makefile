@@ -1,6 +1,6 @@
 generate_option:
 	mkdir -p ./option
-	protoc --go_out=./option --go_opt=paths=source_relative --go_opt=Moption.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub  ./proto/option.proto
+	protoc --go_out=./option --go_opt=paths=source_relative --go_opt=Mproto/option.proto=github.com/TakaWakiyama/protoc-gen-go-pubsub  ./proto/option.proto
 	mkdir -p ./cmd/generator/option
 	mv ./option/proto/option.pb.go ./cmd/generator/option/option.pb.go
 	rm -rf ./option/proto
