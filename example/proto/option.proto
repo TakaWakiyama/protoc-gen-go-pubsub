@@ -3,25 +3,39 @@ package option;
 
 import "google/protobuf/descriptor.proto";
 
+// Subscriber option
 message SubOption {
 	// topic name
 	string topic = 1;
 	// subscription name
 	string subscription = 2;
-	// ack deadline seconds
+	// ack deadline seconds default 60(second)
 	optional uint32 ackDeadlineSeconds = 3;
 	// exactly once default false
-	optional bool exactlyOnceDelivery = 4;
+	optional bool enableExactlyOnceDelivery = 4;
+	// https://github.com/googleapis/google-cloud-go/blob/pubsub/v1.31.0/pubsub/subscription.go#L643
+	// concurrency pulling of messages. Otherwise, NumGoroutines will be set to 1.
+	optional bool synchronous = 5;
+	// NumGoroutines determines the number of goroutines sub.Receive will spawn to pull messages.
+	optional int32 numGoroutines = 6;
+	// MaxOutstandingMessages limits the number of concurrent handlers of messages.
+	// Note, even in synchronous mode, messages pulled in a batch can still be handled concurrently.
+	optional int32 maxOutstandingMessages = 7;
 	// TODO:
 	// guranatee order default false
 	// optional bool guaranteeOrder = 5;
 }
 
+// Publisher option
 message PubOption {
 	// topic name
 	string topic = 1;
 	// batch publish messages default false
 	optional bool batchPublish = 2;
+	// TODO: add batch publish option
+	// ByteThreshold	1e6(=1MB)
+	// CountThreshold	100
+	// DelayThreshold	10 * time.Millisecond
 }
 
 extend google.protobuf.MethodOptions{

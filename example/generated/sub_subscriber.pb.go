@@ -26,7 +26,7 @@ type SubscriberOption struct {
 
 var defaultSubscriberOption = &SubscriberOption{
 	Interceptors:        []gosub.SubscriberInterceptor{},
-	SubscribeGracefully: false,
+	SubscribeGracefully: true,
 }
 
 var retryOpts = []retry.Option{
@@ -103,6 +103,13 @@ func (is *innerExampleSubscriber) listenHelloWorld(ctx context.Context) error {
 	}, retryOpts...); err != nil {
 		return err
 	}
+
+	// Note: you can see ReceiveSettings https://github.com/googleapis/google-cloud-go/blob/pubsub/v1.31.0/pubsub/subscription.go#L720
+	// Note: you can see default value  https://github.com/googleapis/google-cloud-go/blob/main/pubsub/subscription.go#L743
+	sub.ReceiveSettings.Synchronous = false
+	sub.ReceiveSettings.NumGoroutines = 10
+	sub.ReceiveSettings.MaxOutstandingMessages = 1000
+
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -147,6 +154,13 @@ func (is *innerExampleSubscriber) listenOnHoge(ctx context.Context) error {
 	}, retryOpts...); err != nil {
 		return err
 	}
+
+	// Note: you can see ReceiveSettings https://github.com/googleapis/google-cloud-go/blob/pubsub/v1.31.0/pubsub/subscription.go#L720
+	// Note: you can see default value  https://github.com/googleapis/google-cloud-go/blob/main/pubsub/subscription.go#L743
+	sub.ReceiveSettings.Synchronous = false
+	sub.ReceiveSettings.NumGoroutines = 10
+	sub.ReceiveSettings.MaxOutstandingMessages = 1000
+
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -337,6 +351,13 @@ func (is *innerExample2Subscriber) listenHelloWorld2(ctx context.Context) error 
 	}, retryOpts...); err != nil {
 		return err
 	}
+
+	// Note: you can see ReceiveSettings https://github.com/googleapis/google-cloud-go/blob/pubsub/v1.31.0/pubsub/subscription.go#L720
+	// Note: you can see default value  https://github.com/googleapis/google-cloud-go/blob/main/pubsub/subscription.go#L743
+	sub.ReceiveSettings.Synchronous = true
+	sub.ReceiveSettings.NumGoroutines = 1
+	sub.ReceiveSettings.MaxOutstandingMessages = -1
+
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -381,6 +402,13 @@ func (is *innerExample2Subscriber) listenOnHoge2(ctx context.Context) error {
 	}, retryOpts...); err != nil {
 		return err
 	}
+
+	// Note: you can see ReceiveSettings https://github.com/googleapis/google-cloud-go/blob/pubsub/v1.31.0/pubsub/subscription.go#L720
+	// Note: you can see default value  https://github.com/googleapis/google-cloud-go/blob/main/pubsub/subscription.go#L743
+	sub.ReceiveSettings.Synchronous = false
+	sub.ReceiveSettings.NumGoroutines = 10
+	sub.ReceiveSettings.MaxOutstandingMessages = 1000
+
 	callback := func(ctx context.Context, msg *pubsub.Message) {
 		defer func() {
 			if err := recover(); err != nil {

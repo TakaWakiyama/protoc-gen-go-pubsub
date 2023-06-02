@@ -25,7 +25,7 @@ type PublisherOption struct {
 }
 
 var defaultPublisherOption = PublisherOption{
-	Gracefully:  false,
+	Gracefully:  true,
 	MaxAttempts: 3,
 	Delay:       1 * time.Second,
 }
